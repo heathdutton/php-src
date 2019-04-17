@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -40,8 +40,6 @@
 #define EXIFERR_DC
 #define EXIFERR_CC
 #endif
-
-#undef EXIF_JPEG2000
 
 #include "php_exif.h"
 #include <math.h>
@@ -97,7 +95,6 @@ ZEND_END_ARG_INFO()
  */
 static const zend_function_entry exif_functions[] = {
 	PHP_FE(exif_read_data, arginfo_exif_read_data)
-	PHP_DEP_FALIAS(read_exif_data, exif_read_data, arginfo_exif_read_data)
 	PHP_FE(exif_tagname, arginfo_exif_tagname)
 	PHP_FE(exif_thumbnail, arginfo_exif_thumbnail)
 	PHP_FE(exif_imagetype, arginfo_exif_imagetype)
@@ -2037,10 +2034,10 @@ static int exif_file_sections_free(image_info_type *ImageInfo)
 /* {{{ exif_iif_add_value
  Add a value to image_info
 */
-static void exif_iif_add_value(image_info_type *image_info, int section_index, char *name, int tag, int format, int length, void* value, int motorola_intel)
+static void exif_iif_add_value(image_info_type *image_info, int section_index, char *name, int tag, int format, int length, void* value, size_t value_len, int motorola_intel)
 {
 	size_t idex;
-	void *vptr;
+	void *vptr, *vptr_end;
 	image_info_value *info_value;
 	image_info_data  *info_data;
 	image_info_data  *list;
@@ -2062,8 +2059,12 @@ static void exif_iif_add_value(image_info_type *image_info, int section_index, c
 
 	switch (format) {
 		case TAG_FMT_STRING:
+			if (length > value_len) {
+				exif_error_docref("exif_iif_add_value" EXIFERR_CC, image_info, E_WARNING, "length > value_len: %d > %zu", length, value_len);
+				value = NULL;
+			}
 			if (value) {
-				length = php_strnlen(value, length);
+				length = (int)php_strnlen(value, length);
 				info_value->s = estrndup(value, length);
 				info_data->length = length;
 			} else {
@@ -2085,6 +2086,10 @@ static void exif_iif_add_value(image_info_type *image_info, int section_index, c
 			if (!length)
 				break;
 		case TAG_FMT_UNDEFINED:
+			if (length > value_len) {
+				exif_error_docref("exif_iif_add_value" EXIFERR_CC, image_info, E_WARNING, "length > value_len: %d > %zu", length, value_len);
+				value = NULL;
+			}
 			if (value) {
 				if (tag == TAG_MAKER_NOTE) {
 					length = (int) php_strnlen(value, length);
@@ -2115,7 +2120,12 @@ static void exif_iif_add_value(image_info_type *image_info, int section_index, c
 			} else {
 				info_value = &info_data->value;
 			}
+			vptr_end = (char *) value + value_len;
 			for (idex=0,vptr=value; idex<(size_t)length; idex++,vptr=(char *) vptr + php_tiff_bytes_per_format[format]) {
+				if ((char *) vptr_end - (char *) vptr < php_tiff_bytes_per_format[format]) {
+					exif_error_docref("exif_iif_add_value" EXIFERR_CC, image_info, E_WARNING, "Value too short");
+					break;
+				}
 				if (length>1) {
 					info_value = &info_data->value.list[idex];
 				}
@@ -2151,7 +2161,7 @@ static void exif_iif_add_value(image_info_type *image_info, int section_index, c
 						php_error_docref(NULL, E_WARNING, "Found value of type single");
 #endif
 						info_value->f = *(float *)value;
-
+						break;
 					case TAG_FMT_DOUBLE:
 #ifdef EXIF_DEBUG
 						php_error_docref(NULL, E_WARNING, "Found value of type double");
@@ -2169,9 +2179,9 @@ static void exif_iif_add_value(image_info_type *image_info, int section_index, c
 /* {{{ exif_iif_add_tag
  Add a tag from IFD to image_info
 */
-static void exif_iif_add_tag(image_info_type *image_info, int section_index, char *name, int tag, int format, size_t length, void* value)
+static void exif_iif_add_tag(image_info_type *image_info, int section_index, char *name, int tag, int format, size_t length, void* value, size_t value_len)
 {
-	exif_iif_add_value(image_info, section_index, name, tag, format, (int)length, value, image_info->motorola_intel);
+	exif_iif_add_value(image_info, section_index, name, tag, format, (int)length, value, value_len, image_info->motorola_intel);
 }
 /* }}} */
 
@@ -2554,35 +2564,6 @@ static void add_assoc_image_info(zval *value, int sub_array, image_info_type *im
 #define M_COM   0xFE    /* COMment                                  */
 
 #define M_PSEUDO 0x123 	/* Extra value.                             */
-
-/* }}} */
-
-/* {{{ jpeg2000 markers
- */
-/* Markers x30 - x3F do not have a segment */
-/* Markers x00, x01, xFE, xC0 - xDF ISO/IEC 10918-1 -> M_<xx> */
-/* Markers xF0 - xF7 ISO/IEC 10918-3 */
-/* Markers xF7 - xF8 ISO/IEC 14495-1 */
-/* XY=Main/Tile-header:(R:required, N:not_allowed, O:optional, L:last_marker) */
-#define JC_SOC   0x4F   /* NN, Start of codestream                          */
-#define JC_SIZ   0x51   /* RN, Image and tile size                          */
-#define JC_COD   0x52   /* RO, Codeing style defaulte                       */
-#define JC_COC   0x53   /* OO, Coding style component                       */
-#define JC_TLM   0x55   /* ON, Tile part length main header                 */
-#define JC_PLM   0x57   /* ON, Packet length main header                    */
-#define JC_PLT   0x58   /* NO, Packet length tile part header               */
-#define JC_QCD   0x5C   /* RO, Quantization default                         */
-#define JC_QCC   0x5D   /* OO, Quantization component                       */
-#define JC_RGN   0x5E   /* OO, Region of interest                           */
-#define JC_POD   0x5F   /* OO, Progression order default                    */
-#define JC_PPM   0x60   /* ON, Packed packet headers main header            */
-#define JC_PPT   0x61   /* NO, Packet packet headers tile part header       */
-#define JC_CME   0x64   /* OO, Comment: "LL E <text>" E=0:binary, E=1:ascii */
-#define JC_SOT   0x90   /* NR, Start of tile                                */
-#define JC_SOP   0x91   /* NO, Start of packeter default                    */
-#define JC_EPH   0x92   /* NO, End of packet header                         */
-#define JC_SOD   0x93   /* NL, Start of data                                */
-#define JC_EOC   0xD9   /* NN, End of codestream                            */
 /* }}} */
 
 /* {{{ exif_process_COM
@@ -2592,36 +2573,8 @@ static void add_assoc_image_info(zval *value, int sub_array, image_info_type *im
 */
 static void exif_process_COM (image_info_type *image_info, char *value, size_t length)
 {
-	exif_iif_add_tag(image_info, SECTION_COMMENT, "Comment", TAG_COMPUTED_VALUE, TAG_FMT_STRING, length-2, value+2);
+	exif_iif_add_tag(image_info, SECTION_COMMENT, "Comment", TAG_COMPUTED_VALUE, TAG_FMT_STRING, length-2, value+2, length-2);
 }
-/* }}} */
-
-/* {{{ exif_process_CME
-   Process a CME marker.
-   We want to print out the marker contents as legible text;
-   we must guard against random junk and varying newline representations.
-*/
-#ifdef EXIF_JPEG2000
-static void exif_process_CME (image_info_type *image_info, char *value, size_t length)
-{
-	if (length>3) {
-		switch(value[2]) {
-			case 0:
-				exif_iif_add_tag(image_info, SECTION_COMMENT, "Comment", TAG_COMPUTED_VALUE, TAG_FMT_UNDEFINED, length, value);
-				break;
-			case 1:
-				exif_iif_add_tag(image_info, SECTION_COMMENT, "Comment", TAG_COMPUTED_VALUE, TAG_FMT_STRING, length, value);
-				break;
-			default:
-				php_error_docref(NULL, E_NOTICE, "Undefined JPEG2000 comment encoding");
-				break;
-		}
-	} else {
-		exif_iif_add_tag(image_info, SECTION_COMMENT, "Comment", TAG_COMPUTED_VALUE, TAG_FMT_UNDEFINED, 0, NULL);
-		php_error_docref(NULL, E_NOTICE, "JPEG2000 comment section too small");
-	}
-}
-#endif
 /* }}} */
 
 /* {{{ exif_process_SOFn
@@ -2969,7 +2922,7 @@ static int exif_process_string_raw(char **result, char *value, size_t byte_count
  * In contrast to exif_process_string this function does always return a string buffer */
 static int exif_process_string(char **result, char *value, size_t byte_count) {
 	/* we cannot use strlcpy - here the problem is that we cannot use strlen to
-	 * determin length of string and we cannot use strlcpy with len=byte_count+1
+	 * determine length of string and we cannot use strlcpy with len=byte_count+1
 	 * because then we might get into an EXCEPTION if we exceed an allocated
 	 * memory page...so we use php_strnlen in conjunction with memcpy and add the NUL
 	 * char.
@@ -3125,7 +3078,7 @@ static int exif_process_IFD_in_MAKERNOTE(image_info_type *ImageInfo, char * valu
 		break;
 	}
 
-	if (maker_note->offset >= value_len) {
+	if (value_len < 2 || maker_note->offset >= value_len - 1) {
 		/* Do not go past the value end */
 		exif_error_docref("exif_read_data#error_ifd" EXIFERR_CC, ImageInfo, E_WARNING, "IFD data too short: 0x%04X offset 0x%04X", value_len, maker_note->offset);
 		return FALSE;
@@ -3180,11 +3133,16 @@ static int exif_process_IFD_in_MAKERNOTE(image_info_type *ImageInfo, char * valu
 #endif
 		default:
 		case MN_OFFSET_NORMAL:
+			data_len = value_len;
 			break;
 	}
 
 	if ((2+NumDirEntries*12) > value_len) {
 		exif_error_docref("exif_read_data#error_ifd" EXIFERR_CC, ImageInfo, E_WARNING, "Illegal IFD size: 2 + 0x%04X*12 = 0x%04X > 0x%04X", NumDirEntries, 2+NumDirEntries*12, value_len);
+		return FALSE;
+	}
+	if ((dir_start - value_ptr) > value_len - (2+NumDirEntries*12)) {
+		exif_error_docref("exif_read_data#error_ifd" EXIFERR_CC, ImageInfo, E_WARNING, "Illegal IFD size: 0x%04X > 0x%04X", (dir_start - value_ptr) + (2+NumDirEntries*12), value_len);
 		return FALSE;
 	}
 
@@ -3208,7 +3166,7 @@ static int exif_process_IFD_in_MAKERNOTE(image_info_type *ImageInfo, char * valu
 static int exif_process_IFD_TAG(image_info_type *ImageInfo, char *dir_entry, char *offset_base, size_t IFDlength, size_t displacement, int section_index, int ReadNextIFD, tag_table_type tag_table)
 {
 	size_t length;
-	int tag, format, components;
+	unsigned int tag, format, components;
 	char *value_ptr, tagname[64], cbuf[32], *outside=NULL;
 	size_t byte_count, offset_val, fpos, fgot;
 	int64_t byte_count_signed;
@@ -3378,6 +3336,10 @@ static int exif_process_IFD_TAG(image_info_type *ImageInfo, char *dir_entry, cha
 				break;
 
 			case TAG_USERCOMMENT:
+				EFREE_IF(ImageInfo->UserComment);
+				ImageInfo->UserComment = NULL;
+				EFREE_IF(ImageInfo->UserCommentEncoding);
+				ImageInfo->UserCommentEncoding = NULL;
 				ImageInfo->UserCommentLength = exif_process_user_comment(ImageInfo, &(ImageInfo->UserComment), &(ImageInfo->UserCommentEncoding), value_ptr, byte_count);
 				break;
 
@@ -3519,7 +3481,7 @@ static int exif_process_IFD_TAG(image_info_type *ImageInfo, char *dir_entry, cha
 				}
 		}
 	}
-	exif_iif_add_tag(ImageInfo, section_index, exif_get_tagname(tag, tagname, sizeof(tagname), tag_table), tag, format, components, value_ptr);
+	exif_iif_add_tag(ImageInfo, section_index, exif_get_tagname(tag, tagname, sizeof(tagname), tag_table), tag, format, components, value_ptr, byte_count);
 	EFREE_IF(outside);
 	return TRUE;
 }
@@ -3647,7 +3609,7 @@ static void exif_process_TIFF_in_JPEG(image_info_type *ImageInfo, char *CharBuf,
 	exif_error_docref(NULL EXIFERR_CC, ImageInfo, E_NOTICE, "Process TIFF in JPEG done");
 #endif
 
-	/* Compute the CCD width, in milimeters. */
+	/* Compute the CCD width, in millimeters. */
 	if (ImageInfo->FocalplaneXRes != 0) {
 		ImageInfo->CCDWidth = (float)(ImageInfo->ExifImageWidth * ImageInfo->FocalplaneUnits / ImageInfo->FocalplaneXRes);
 	}
@@ -3681,10 +3643,10 @@ static void exif_process_APP12(image_info_type *ImageInfo, char *buffer, size_t 
 	size_t l1, l2=0;
 
 	if ((l1 = php_strnlen(buffer+2, length-2)) > 0) {
-		exif_iif_add_tag(ImageInfo, SECTION_APP12, "Company", TAG_NONE, TAG_FMT_STRING, l1, buffer+2);
+		exif_iif_add_tag(ImageInfo, SECTION_APP12, "Company", TAG_NONE, TAG_FMT_STRING, l1, buffer+2, l1);
 		if (length > 2+l1+1) {
 			l2 = php_strnlen(buffer+2+l1+1, length-2-l1-1);
-			exif_iif_add_tag(ImageInfo, SECTION_APP12, "Info", TAG_NONE, TAG_FMT_STRING, l2, buffer+2+l1+1);
+			exif_iif_add_tag(ImageInfo, SECTION_APP12, "Info", TAG_NONE, TAG_FMT_STRING, l2, buffer+2+l1+1, l2);
 		}
 	}
 #ifdef EXIF_DEBUG
@@ -3712,7 +3674,7 @@ static int exif_scan_JPEG_header(image_info_type *ImageInfo)
 
 		/* get marker byte, swallowing possible padding                           */
 		/* some software does not count the length bytes of COM section           */
-		/* one company doing so is very much envolved in JPEG... so we accept too */
+		/* one company doing so is very much involved in JPEG... so we accept too */
 		if (last_marker==M_COM && comment_correction) {
 			comment_correction = 2;
 		}
@@ -3899,7 +3861,7 @@ static int exif_scan_thumbnail(image_info_type *ImageInfo)
 			return FALSE;
 		marker = c;
 		length = php_jpg_get16(data+pos);
-		if (pos+length>=ImageInfo->Thumbnail.size) {
+		if (length > ImageInfo->Thumbnail.size || pos >= ImageInfo->Thumbnail.size - length) {
 			return FALSE;
 		}
 #ifdef EXIF_DEBUG
@@ -3920,6 +3882,10 @@ static int exif_scan_thumbnail(image_info_type *ImageInfo)
 			case M_SOF14:
 			case M_SOF15:
 				/* handle SOFn block */
+				if (length < 8 || ImageInfo->Thumbnail.size - 8 < pos) {
+					/* exif_process_SOFn needs 8 bytes */
+					return FALSE;
+				}
 				exif_process_SOFn(data+pos, marker, &sof_info);
 				ImageInfo->Thumbnail.height   = sof_info.height;
 				ImageInfo->Thumbnail.width    = sof_info.width;
@@ -3957,10 +3923,10 @@ static int exif_process_IFD_in_TIFF(image_info_type *ImageInfo, size_t dir_offse
 	tag_table_type tag_table = exif_get_tag_table(section_index);
 
 	if (ImageInfo->ifd_nesting_level > MAX_IFD_NESTING_LEVEL) {
-                return FALSE;
-        }
+		return FALSE;
+	}
 
-	if (ImageInfo->FileSize >= dir_offset+2) {
+	if (ImageInfo->FileSize >= 2 && ImageInfo->FileSize - 2 >= dir_offset) {
 		sn = exif_file_sections_add(ImageInfo, M_PSEUDO, 2, NULL);
 #ifdef EXIF_DEBUG
 		exif_error_docref(NULL EXIFERR_CC, ImageInfo, E_NOTICE, "Read from TIFF: filesize(x%04X), IFD dir(x%04X + x%04X)", ImageInfo->FileSize, dir_offset, 2);
@@ -3968,8 +3934,8 @@ static int exif_process_IFD_in_TIFF(image_info_type *ImageInfo, size_t dir_offse
 		php_stream_seek(ImageInfo->infile, dir_offset, SEEK_SET); /* we do not know the order of sections */
 		php_stream_read(ImageInfo->infile, (char*)ImageInfo->file.list[sn].data, 2);
 		num_entries = php_ifd_get16u(ImageInfo->file.list[sn].data, ImageInfo->motorola_intel);
-		dir_size = 2/*num dir entries*/ +12/*length of entry*/*num_entries +4/* offset to next ifd (points to thumbnail or NULL)*/;
-		if (ImageInfo->FileSize >= dir_offset+dir_size) {
+		dir_size = 2/*num dir entries*/ +12/*length of entry*/*(size_t)num_entries +4/* offset to next ifd (points to thumbnail or NULL)*/;
+		if (ImageInfo->FileSize >= dir_size && ImageInfo->FileSize - dir_size >= dir_offset) {
 #ifdef EXIF_DEBUG
 			exif_error_docref(NULL EXIFERR_CC, ImageInfo, E_NOTICE, "Read from TIFF: filesize(x%04X), IFD dir(x%04X + x%04X), IFD entries(%d)", ImageInfo->FileSize, dir_offset+2, dir_size-2, num_entries);
 #endif
@@ -4052,9 +4018,9 @@ static int exif_process_IFD_in_TIFF(image_info_type *ImageInfo, size_t dir_offse
 					}
 				}
 			}
-			if (ImageInfo->FileSize >= dir_offset + ImageInfo->file.list[sn].size) {
+			if (ImageInfo->FileSize >= ImageInfo->file.list[sn].size && ImageInfo->FileSize - ImageInfo->file.list[sn].size >= dir_offset) {
 				if (ifd_size > dir_size) {
-					if (dir_offset + ifd_size > ImageInfo->FileSize) {
+					if (ImageInfo->FileSize < ifd_size || dir_offset > ImageInfo->FileSize - ifd_size) {
 						exif_error_docref(NULL EXIFERR_CC, ImageInfo, E_WARNING, "Error in TIFF: filesize(x%04X) less than size of IFD(x%04X + x%04X)", ImageInfo->FileSize, dir_offset, ifd_size);
 						return FALSE;
 					}
@@ -4548,7 +4514,7 @@ PHP_FUNCTION(exif_read_data)
 	if (ImageInfo.Thumbnail.size) {
 		if (read_thumbnail) {
 			/* not exif_iif_add_str : this is a buffer */
-			exif_iif_add_tag(&ImageInfo, SECTION_THUMBNAIL, "THUMBNAIL", TAG_NONE, TAG_FMT_UNDEFINED, ImageInfo.Thumbnail.size, ImageInfo.Thumbnail.data);
+			exif_iif_add_tag(&ImageInfo, SECTION_THUMBNAIL, "THUMBNAIL", TAG_NONE, TAG_FMT_UNDEFINED, ImageInfo.Thumbnail.size, ImageInfo.Thumbnail.data, ImageInfo.Thumbnail.size);
 		}
 		if (!ImageInfo.Thumbnail.width || !ImageInfo.Thumbnail.height) {
 			/* try to evaluate if thumbnail data is present */
@@ -4606,9 +4572,9 @@ PHP_FUNCTION(exif_thumbnail)
 	ZEND_PARSE_PARAMETERS_START(1, 4)
 		Z_PARAM_ZVAL(stream)
 		Z_PARAM_OPTIONAL
-		Z_PARAM_ZVAL_DEREF(z_width)
-		Z_PARAM_ZVAL_DEREF(z_height)
-		Z_PARAM_ZVAL_DEREF(z_imagetype)
+		Z_PARAM_ZVAL(z_width)
+		Z_PARAM_ZVAL(z_height)
+		Z_PARAM_ZVAL(z_imagetype)
 	ZEND_PARSE_PARAMETERS_END();
 
 	memset(&ImageInfo, 0, sizeof(ImageInfo));
@@ -4651,16 +4617,15 @@ PHP_FUNCTION(exif_thumbnail)
 	ZVAL_STRINGL(return_value, ImageInfo.Thumbnail.data, ImageInfo.Thumbnail.size);
 	if (arg_c >= 3) {
 		if (!ImageInfo.Thumbnail.width || !ImageInfo.Thumbnail.height) {
-			exif_scan_thumbnail(&ImageInfo);
+			if (!exif_scan_thumbnail(&ImageInfo)) {
+				ImageInfo.Thumbnail.width = ImageInfo.Thumbnail.height = 0;
+			}
 		}
-		zval_ptr_dtor(z_width);
-		zval_ptr_dtor(z_height);
-		ZVAL_LONG(z_width,  ImageInfo.Thumbnail.width);
-		ZVAL_LONG(z_height, ImageInfo.Thumbnail.height);
+		ZEND_TRY_ASSIGN_LONG(z_width,  ImageInfo.Thumbnail.width);
+		ZEND_TRY_ASSIGN_LONG(z_height, ImageInfo.Thumbnail.height);
 	}
 	if (arg_c >= 4)	{
-		zval_ptr_dtor(z_imagetype);
-		ZVAL_LONG(z_imagetype, ImageInfo.Thumbnail.filetype);
+		ZEND_TRY_ASSIGN_LONG(z_imagetype, ImageInfo.Thumbnail.filetype);
 	}
 
 #ifdef EXIF_DEBUG
@@ -4707,12 +4672,3 @@ PHP_FUNCTION(exif_imagetype)
 /* }}} */
 
 #endif
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 tw=78 fdm=marker
- * vim<600: sw=4 ts=4 tw=78
- */

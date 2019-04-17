@@ -37,7 +37,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -764,11 +764,9 @@ void decode_request_worker(char *xml_in, int xml_in_len, char *encoding_in, zval
 			if (method_name_out) {
 				method_name = XMLRPC_RequestGetMethodName(response);
 				if (method_name) {
-					zval_ptr_dtor(method_name_out);
-					ZVAL_STRING(method_name_out, method_name);
+					ZEND_TRY_ASSIGN_STRING(method_name_out, method_name);
 				} else {
-					zval_ptr_dtor(retval);
-					ZVAL_NULL(retval);
+					ZEND_TRY_ASSIGN_NULL(retval);
 				}
 			}
 		}
@@ -787,7 +785,7 @@ PHP_FUNCTION(xmlrpc_decode_request)
 	zval *method;
 	size_t xml_len, encoding_len = 0;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS(), "sz/|s", &xml, &xml_len, &method, &encoding, &encoding_len) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "sz|s", &xml, &xml_len, &method, &encoding, &encoding_len) == FAILURE) {
 		return;
 	}
 
@@ -896,7 +894,7 @@ static XMLRPC_VALUE php_xmlrpc_callback(XMLRPC_SERVER server, XMLRPC_REQUEST xRe
 	/* Use same C function for all methods */
 
 	/* php func prototype: function user_func($method_name, $xmlrpc_params, $user_params) */
-	call_user_function(CG(function_table), NULL, &pData->php_function, &pData->return_data, 3, callback_params);
+	call_user_function(NULL, NULL, &pData->php_function, &pData->return_data, 3, callback_params);
 
 	pData->php_executed = 1;
 
@@ -922,7 +920,7 @@ static void php_xmlrpc_introspection_callback(XMLRPC_SERVER server, void* data) 
 	ZEND_HASH_FOREACH_VAL(Z_ARRVAL(pData->server->introspection_map), php_function) {
 		if (zend_is_callable(php_function, 0, &php_function_name)) {
 			/* php func prototype: function string user_func($user_params) */
-			if (call_user_function(CG(function_table), NULL, php_function, &retval, 1, callback_params) == SUCCESS) {
+			if (call_user_function(NULL, NULL, php_function, &retval, 1, callback_params) == SUCCESS) {
 				XMLRPC_VALUE xData;
 				STRUCT_XMLRPC_ERROR err = {0};
 
@@ -1389,15 +1387,19 @@ PHP_FUNCTION(xmlrpc_set_type)
 	size_t type_len;
 	XMLRPC_VALUE_TYPE vtype;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS(), "z/s", &arg, &type, &type_len) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "zs", &arg, &type, &type_len) == FAILURE) {
 		return;
 	}
 
 	vtype = xmlrpc_str_as_type(type);
 	if (vtype != xmlrpc_none) {
-		if (set_zval_xmlrpc_type(arg, vtype) == SUCCESS) {
+		zval tmp;
+		ZVAL_COPY(&tmp, Z_REFVAL_P(arg));
+		if (set_zval_xmlrpc_type(&tmp, vtype) == SUCCESS) {
+			ZEND_TRY_ASSIGN_VALUE(arg, &tmp);
 			RETURN_TRUE;
 		}
+		Z_TRY_DELREF(tmp);
 	} else {
 		zend_error(E_WARNING,"invalid type '%s' passed to xmlrpc_set_type()", type);
 	}
@@ -1450,10 +1452,3 @@ PHP_FUNCTION(xmlrpc_is_fault)
 	RETURN_FALSE;
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- */

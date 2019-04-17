@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -54,7 +54,7 @@ ZEND_API int ZEND_FASTCALL shift_left_function(zval *result, zval *op1, zval *op
 ZEND_API int ZEND_FASTCALL shift_right_function(zval *result, zval *op1, zval *op2);
 ZEND_API int ZEND_FASTCALL concat_function(zval *result, zval *op1, zval *op2);
 
-ZEND_API int ZEND_FASTCALL zend_is_identical(zval *op1, zval *op2);
+ZEND_API zend_bool ZEND_FASTCALL zend_is_identical(zval *op1, zval *op2);
 
 ZEND_API int ZEND_FASTCALL is_equal_function(zval *result, zval *op1, zval *op2);
 ZEND_API int ZEND_FASTCALL is_identical_function(zval *result, zval *op1, zval *op2);
@@ -451,7 +451,7 @@ ZEND_API void ZEND_FASTCALL zend_locale_sprintf_double(zval *op ZEND_FILE_LINE_D
 		convert_scalar_to_number(pzv);					\
 	}
 
-#if HAVE_SETLOCALE && defined(ZEND_WIN32) && !defined(ZTS) && defined(_MSC_VER)
+#if defined(ZEND_WIN32) && !defined(ZTS) && defined(_MSC_VER)
 /* This performance improvement of tolower() on Windows gives 10-18% on bench.php */
 #define ZEND_USE_TOLOWER_L 1
 #endif
@@ -778,7 +778,7 @@ static zend_always_inline int fast_equal_check_string(zval *op1, zval *op2)
 	return Z_LVAL(result) == 0;
 }
 
-static zend_always_inline int fast_is_identical_function(zval *op1, zval *op2)
+static zend_always_inline zend_bool fast_is_identical_function(zval *op1, zval *op2)
 {
 	if (Z_TYPE_P(op1) != Z_TYPE_P(op2)) {
 		return 0;
@@ -788,7 +788,7 @@ static zend_always_inline int fast_is_identical_function(zval *op1, zval *op2)
 	return zend_is_identical(op1, op2);
 }
 
-static zend_always_inline int fast_is_not_identical_function(zval *op1, zval *op2)
+static zend_always_inline zend_bool fast_is_not_identical_function(zval *op1, zval *op2)
 {
 	if (Z_TYPE_P(op1) != Z_TYPE_P(op2)) {
 		return 1;
@@ -801,14 +801,14 @@ static zend_always_inline int fast_is_not_identical_function(zval *op1, zval *op
 #define ZEND_TRY_BINARY_OP1_OBJECT_OPERATION(opcode, binary_op)                                            \
 	if (UNEXPECTED(Z_TYPE_P(op1) == IS_OBJECT)                                                             \
 		&& op1 == result                                                                                   \
-		&& UNEXPECTED(Z_OBJ_HANDLER_P(op1, get))                                                           \
-		&& EXPECTED(Z_OBJ_HANDLER_P(op1, set))) {                                                          \
+		&& UNEXPECTED(Z_OBJ_HANDLER_P(op1, get))                                                          \
+		&& EXPECTED(Z_OBJ_HANDLER_P(op1, set))) {                                                         \
 		int ret;                                                                                           \
 		zval rv;                                                                                           \
-		zval *objval = Z_OBJ_HANDLER_P(op1, get)(op1, &rv);                                      \
-		Z_TRY_ADDREF_P(objval);                                                                                \
-		ret = binary_op(objval, objval, op2);                                                    \
-		Z_OBJ_HANDLER_P(op1, set)(op1, objval);                                                  \
+		zval *objval = Z_OBJ_HANDLER_P(op1, get)(Z_OBJ_P(op1), &rv);                                      \
+		Z_TRY_ADDREF_P(objval);                                                                            \
+		ret = binary_op(objval, objval, op2);                                                              \
+		Z_OBJ_HANDLER_P(op1, set)(Z_OBJ_P(op1), objval);                                         \
 		zval_ptr_dtor(objval);                                                                             \
 		return ret;                                                                                        \
 	} else if (UNEXPECTED(Z_TYPE_P(op1) == IS_OBJECT)                                                      \
@@ -875,13 +875,3 @@ static zend_always_inline void zend_unwrap_reference(zval *op) /* {{{ */
 END_EXTERN_C()
 
 #endif
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

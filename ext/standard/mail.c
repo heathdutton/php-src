@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -35,9 +35,7 @@
 #endif
 
 #if PHP_SIGCHILD
-#if HAVE_SIGNAL_H
 #include <signal.h>
-#endif
 #endif
 
 #include "php_syslog.h"
@@ -657,12 +655,3 @@ PHP_MINFO_FUNCTION(mail)
 #endif
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

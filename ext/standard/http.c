@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -202,15 +202,6 @@ PHPAPI int php_url_encode_hash_ex(HashTable *ht, smart_str *formstr,
 				case IS_TRUE:
 					smart_str_appendl(formstr, "1", sizeof("1")-1);
 					break;
-				case IS_DOUBLE:
-					{
-						char *ekey;
-					  	size_t ekey_len;
-						ekey_len = spprintf(&ekey, 0, "%.*G", (int) EG(precision), Z_DVAL_P(zdata));
-						smart_str_appendl(formstr, ekey, ekey_len);
-						efree(ekey);
-				  	}
-					break;
 				default:
 					{
 						zend_string *ekey;
@@ -267,12 +258,3 @@ PHP_FUNCTION(http_build_query)
 	RETURN_NEW_STR(formstr.s);
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

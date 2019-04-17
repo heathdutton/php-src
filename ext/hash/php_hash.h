@@ -2,7 +2,7 @@
   +----------------------------------------------------------------------+
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2018 The PHP Group                                |
+  | Copyright (c) The PHP Group                                          |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -91,6 +91,7 @@ extern const php_hash_ops php_hash_gost_crypto_ops;
 extern const php_hash_ops php_hash_adler32_ops;
 extern const php_hash_ops php_hash_crc32_ops;
 extern const php_hash_ops php_hash_crc32b_ops;
+extern const php_hash_ops php_hash_crc32c_ops;
 extern const php_hash_ops php_hash_fnv132_ops;
 extern const php_hash_ops php_hash_fnv1a32_ops;
 extern const php_hash_ops php_hash_fnv164_ops;
@@ -150,7 +151,7 @@ PHP_HASH_API int php_hash_copy(const void *ops, void *orig_context, void *dest_c
 static inline void php_hash_bin2hex(char *out, const unsigned char *in, size_t in_len)
 {
 	static const char hexits[17] = "0123456789abcdef";
-	int i;
+	size_t i;
 
 	for(i = 0; i < in_len; i++) {
 		out[i * 2]       = hexits[in[i] >> 4];
@@ -159,13 +160,3 @@ static inline void php_hash_bin2hex(char *out, const unsigned char *in, size_t i
 }
 
 #endif	/* PHP_HASH_H */
-
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

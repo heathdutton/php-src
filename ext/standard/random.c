@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -194,7 +194,7 @@ PHP_FUNCTION(random_bytes)
 	zend_long size;
 	zend_string *bytes;
 
-	ZEND_PARSE_PARAMETERS_START_EX(ZEND_PARSE_PARAMS_THROW, 1, 1)
+	ZEND_PARSE_PARAMETERS_START(1, 1)
 		Z_PARAM_LONG(size)
 	ZEND_PARSE_PARAMETERS_END();
 
@@ -268,7 +268,7 @@ PHP_FUNCTION(random_int)
 	zend_long max;
 	zend_long result;
 
-	ZEND_PARSE_PARAMETERS_START_EX(ZEND_PARSE_PARAMS_THROW, 2, 2)
+	ZEND_PARSE_PARAMETERS_START(2, 2)
 		Z_PARAM_LONG(min)
 		Z_PARAM_LONG(max)
 	ZEND_PARSE_PARAMETERS_END();
@@ -285,12 +285,3 @@ PHP_FUNCTION(random_int)
 	RETURN_LONG(result);
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

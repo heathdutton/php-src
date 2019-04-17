@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -40,10 +40,7 @@ ZEND_API void zend_generator_restore_call_stack(zend_generator *generator) /* {{
 			(ZEND_CALL_INFO(call) & ~ZEND_CALL_ALLOCATED),
 			call->func,
 			ZEND_CALL_NUM_ARGS(call),
-			(Z_TYPE(call->This) == IS_UNDEF) ?
-				(zend_class_entry*)Z_OBJ(call->This) : NULL,
-			(Z_TYPE(call->This) != IS_UNDEF) ?
-				Z_OBJ(call->This) : NULL);
+			Z_PTR(call->This));
 		memcpy(((zval*)new_call) + ZEND_CALL_FRAME_SLOT, ((zval*)call) + ZEND_CALL_FRAME_SLOT, ZEND_CALL_NUM_ARGS(call) * sizeof(zval));
 		new_call->prev_execute_data = prev_call;
 		prev_call = new_call;
@@ -123,8 +120,7 @@ ZEND_API void zend_generator_close(zend_generator *generator, zend_bool finished
 		/* always free the CV's, in the symtable are only not-free'd IS_INDIRECT's */
 		zend_free_compiled_variables(execute_data);
 
-		if ((EX_CALL_INFO() & ZEND_CALL_RELEASE_THIS) &&
-			EXPECTED(GC_TYPE(Z_OBJ(execute_data->This)) == IS_OBJECT)) {
+		if (EX_CALL_INFO() & ZEND_CALL_RELEASE_THIS) {
 			OBJ_RELEASE(Z_OBJ(execute_data->This));
 		}
 
@@ -144,8 +140,7 @@ ZEND_API void zend_generator_close(zend_generator *generator, zend_bool finished
 		}
 
 		/* Free closure object */
-		if ((EX_CALL_INFO() & ZEND_CALL_CLOSURE) &&
-			EXPECTED(GC_TYPE(ZEND_CLOSURE_OBJECT(EX(func))) == IS_OBJECT)) {
+		if (EX_CALL_INFO() & ZEND_CALL_CLOSURE) {
 			OBJ_RELEASE(ZEND_CLOSURE_OBJECT(EX(func)));
 		}
 
@@ -308,9 +303,9 @@ static uint32_t calc_gc_buffer_size(zend_generator *generator) /* {{{ */
 }
 /* }}} */
 
-static HashTable *zend_generator_get_gc(zval *object, zval **table, int *n) /* {{{ */
+static HashTable *zend_generator_get_gc(zend_object *object, zval **table, int *n) /* {{{ */
 {
-	zend_generator *generator = (zend_generator*) Z_OBJ_P(object);
+	zend_generator *generator = (zend_generator*)object;
 	zend_execute_data *execute_data = generator->execute_data;
 	zend_op_array *op_array;
 	zval *gc_buffer;
@@ -1225,13 +1220,3 @@ void zend_register_generator_ce(void) /* {{{ */
 	zend_ce_ClosedGeneratorException = zend_register_internal_class_ex(&ce, zend_ce_exception);
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

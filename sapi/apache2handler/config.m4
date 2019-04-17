@@ -1,8 +1,11 @@
 dnl config.m4 for sapi apache2handler
 
-PHP_ARG_WITH(apxs2,,
-[  --with-apxs2[=FILE]       Build shared Apache 2.0 Handler module. FILE is the optional
-                          pathname to the Apache apxs tool [apxs]], no, no)
+PHP_ARG_WITH([apxs2],,
+  [AS_HELP_STRING([[--with-apxs2[=FILE]]],
+    [Build shared Apache 2.0 Handler module. FILE is the optional pathname to
+    the Apache apxs tool [apxs]])],
+  [no],
+  [no])
 
 AC_MSG_CHECKING([for Apache 2.0 handler-module support via DSO through APXS])
 
@@ -68,20 +71,20 @@ if test "$PHP_APXS2" != "no"; then
   if test -z `$APXS -q SYSCONFDIR`; then
     INSTALL_IT="\$(mkinstalldirs) '$APXS_LIBEXECDIR' && \
                  $APXS -S LIBEXECDIR='$APXS_LIBEXECDIR' \
-                       -i -n php7"
+                       -i -n php"
   else
     APXS_SYSCONFDIR='$(INSTALL_ROOT)'`$APXS -q SYSCONFDIR`
     INSTALL_IT="\$(mkinstalldirs) '$APXS_LIBEXECDIR' && \
                 \$(mkinstalldirs) '$APXS_SYSCONFDIR' && \
                  $APXS -S LIBEXECDIR='$APXS_LIBEXECDIR' \
                        -S SYSCONFDIR='$APXS_SYSCONFDIR' \
-                       -i -a -n php7"
+                       -i -a -n php"
   fi
 
   case $host_alias in
   *aix*)
     EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-brtl -Wl,-bI:$APXS_LIBEXECDIR/httpd.exp"
-    PHP_SELECT_SAPI(apache2handler, shared, mod_php7.c sapi_apache2.c apache_config.c php_functions.c, $APACHE_CFLAGS)
+    PHP_SELECT_SAPI(apache2handler, shared, mod_php.c sapi_apache2.c apache_config.c php_functions.c, $APACHE_CFLAGS)
     INSTALL_IT="$INSTALL_IT $SAPI_LIBTOOL"
     ;;
   *darwin*)
@@ -97,12 +100,12 @@ if test "$PHP_APXS2" != "no"; then
     fi
     MH_BUNDLE_FLAGS="-bundle -bundle_loader $APXS_HTTPD $MH_BUNDLE_FLAGS"
     PHP_SUBST(MH_BUNDLE_FLAGS)
-    PHP_SELECT_SAPI(apache2handler, bundle, mod_php7.c sapi_apache2.c apache_config.c php_functions.c, $APACHE_CFLAGS)
-    SAPI_SHARED=libs/libphp7.so
+    PHP_SELECT_SAPI(apache2handler, bundle, mod_php.c sapi_apache2.c apache_config.c php_functions.c, $APACHE_CFLAGS)
+    SAPI_SHARED=libs/libphp.so
     INSTALL_IT="$INSTALL_IT $SAPI_SHARED"
     ;;
   *)
-    PHP_SELECT_SAPI(apache2handler, shared, mod_php7.c sapi_apache2.c apache_config.c php_functions.c, $APACHE_CFLAGS)
+    PHP_SELECT_SAPI(apache2handler, shared, mod_php.c sapi_apache2.c apache_config.c php_functions.c, $APACHE_CFLAGS)
     INSTALL_IT="$INSTALL_IT $SAPI_LIBTOOL"
     ;;
   esac
@@ -123,7 +126,3 @@ if test "$PHP_APXS2" != "no"; then
 else
   AC_MSG_RESULT(no)
 fi
-
-dnl ## Local Variables:
-dnl ## tab-width: 4
-dnl ## End:

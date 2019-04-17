@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -291,7 +291,7 @@ int dom_node_node_value_read(dom_object *obj, zval *retval)
 		return FAILURE;
 	}
 
-	/* Access to Element node is implemented as a convience method */
+	/* Access to Element node is implemented as a convenience method */
 	switch (nodep->type) {
 		case XML_ATTRIBUTE_NODE:
 		case XML_TEXT_NODE:
@@ -329,7 +329,7 @@ int dom_node_node_value_write(dom_object *obj, zval *newval)
 		return FAILURE;
 	}
 
-	/* Access to Element node is implemented as a convience method */
+	/* Access to Element node is implemented as a convenience method */
 	switch (nodep->type) {
 		case XML_ELEMENT_NODE:
 		case XML_ATTRIBUTE_NODE:
@@ -1914,12 +1914,3 @@ PHP_METHOD(domnode, getLineNo)
 /* }}} */
 
 #endif
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

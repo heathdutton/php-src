@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -161,26 +161,6 @@ PHPAPI void php_info_print_module(zend_module_entry *zend_module) /* {{{ */
 			php_info_printf("%s\n", zend_module->name);
 		}
 	}
-}
-/* }}} */
-
-static int _display_module_info_func(zval *el) /* {{{ */
-{
-	zend_module_entry *module = (zend_module_entry*)Z_PTR_P(el);
-	if (module->info_func || module->version) {
-		php_info_print_module(module);
-	}
-	return ZEND_HASH_APPLY_KEEP;
-}
-/* }}} */
-
-static int _display_module_info_def(zval *el) /* {{{ */
-{
-	zend_module_entry *module = (zend_module_entry*)Z_PTR_P(el);
-	if (!module->info_func && !module->version) {
-		php_info_print_module(module);
-	}
-	return ZEND_HASH_APPLY_KEEP;
 }
 /* }}} */
 
@@ -945,17 +925,26 @@ PHPAPI void php_print_info(int flag)
 
 	if (flag & PHP_INFO_MODULES) {
 		HashTable sorted_registry;
+		zend_module_entry *module;
 
 		zend_hash_init(&sorted_registry, zend_hash_num_elements(&module_registry), NULL, NULL, 1);
 		zend_hash_copy(&sorted_registry, &module_registry, NULL);
 		zend_hash_sort(&sorted_registry, module_name_cmp, 0);
 
-		zend_hash_apply(&sorted_registry, _display_module_info_func);
+		ZEND_HASH_FOREACH_PTR(&sorted_registry, module) {
+			if (module->info_func || module->version) {
+				php_info_print_module(module);
+			}
+		} ZEND_HASH_FOREACH_END();
 
 		SECTION("Additional Modules");
 		php_info_print_table_start();
 		php_info_print_table_header(1, "Module Name");
-		zend_hash_apply(&sorted_registry, _display_module_info_def);
+		ZEND_HASH_FOREACH_PTR(&sorted_registry, module) {
+			if (!module->info_func && !module->version) {
+				php_info_print_module(module);
+			}
+		} ZEND_HASH_FOREACH_END();
 		php_info_print_table_end();
 
 		zend_hash_destroy(&sorted_registry);
@@ -965,6 +954,7 @@ PHPAPI void php_print_info(int flag)
 		SECTION("Environment");
 		php_info_print_table_start();
 		php_info_print_table_header(2, "Variable", "Value");
+		tsrm_env_lock();
 		for (env=environ; env!=NULL && *env !=NULL; env++) {
 			tmp1 = estrdup(*env);
 			if (!(tmp2=strchr(tmp1,'='))) { /* malformed entry? */
@@ -976,6 +966,7 @@ PHPAPI void php_print_info(int flag)
 			php_info_print_table_row(2, tmp1, tmp2);
 			efree(tmp1);
 		}
+        tsrm_env_unlock();
 		php_info_print_table_end();
 	}
 
@@ -1381,12 +1372,3 @@ PHP_FUNCTION(php_ini_loaded_file)
 	}
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

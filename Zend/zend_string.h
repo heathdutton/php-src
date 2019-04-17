@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -79,7 +79,7 @@ END_EXTERN_C()
 	(str) = (zend_string *)do_alloca(ZEND_MM_ALIGNED_SIZE_EX(_ZSTR_STRUCT_SIZE(_len), 8), (use_heap)); \
 	GC_SET_REFCOUNT(str, 1); \
 	GC_TYPE_INFO(str) = IS_STRING; \
-	zend_string_forget_hash_val(str); \
+	ZSTR_H(str) = 0; \
 	ZSTR_LEN(str) = _len; \
 } while (0)
 
@@ -101,6 +101,7 @@ static zend_always_inline zend_ulong zend_string_hash_val(zend_string *s)
 static zend_always_inline void zend_string_forget_hash_val(zend_string *s)
 {
 	ZSTR_H(s) = 0;
+	GC_DEL_FLAGS(s, IS_STR_VALID_UTF8);
 }
 
 static zend_always_inline uint32_t zend_string_refcount(const zend_string *s)
@@ -133,7 +134,7 @@ static zend_always_inline zend_string *zend_string_alloc(size_t len, int persist
 
 	GC_SET_REFCOUNT(ret, 1);
 	GC_TYPE_INFO(ret) = IS_STRING | ((persistent ? IS_STR_PERSISTENT : 0) << GC_FLAGS_SHIFT);
-	zend_string_forget_hash_val(ret);
+	ZSTR_H(ret) = 0;
 	ZSTR_LEN(ret) = len;
 	return ret;
 }
@@ -144,7 +145,7 @@ static zend_always_inline zend_string *zend_string_safe_alloc(size_t n, size_t m
 
 	GC_SET_REFCOUNT(ret, 1);
 	GC_TYPE_INFO(ret) = IS_STRING | ((persistent ? IS_STR_PERSISTENT : 0) << GC_FLAGS_SHIFT);
-	zend_string_forget_hash_val(ret);
+	ZSTR_H(ret) = 0;
 	ZSTR_LEN(ret) = (n * m) + l;
 	return ret;
 }
@@ -336,7 +337,7 @@ static zend_always_inline zend_bool zend_string_equals(zend_string *s1, zend_str
  * constants, prime or not, has never been adequately explained by
  * anyone. So I try an explanation: if one experimentally tests all
  * multipliers between 1 and 256 (as RSE did now) one detects that even
- * numbers are not useable at all. The remaining 128 odd numbers
+ * numbers are not usable at all. The remaining 128 odd numbers
  * (except for the number 1) work more or less all equally well. They
  * all distribute in an acceptable way and this way fill a hash table
  * with an average percent of approx. 86%.
@@ -415,7 +416,6 @@ EMPTY_SWITCH_DEFAULT_CASE()
 	_(ZEND_STR_THIS,                   "this") \
 	_(ZEND_STR_VALUE,                  "value") \
 	_(ZEND_STR_KEY,                    "key") \
-	_(ZEND_STR_MAGIC_AUTOLOAD,         "__autoload") \
 	_(ZEND_STR_MAGIC_INVOKE,           "__invoke") \
 	_(ZEND_STR_PREVIOUS,               "previous") \
 	_(ZEND_STR_CODE,                   "code") \
@@ -451,13 +451,3 @@ ZEND_KNOWN_STRINGS(_ZEND_STR_ID)
 } zend_known_string_id;
 
 #endif /* ZEND_STRING_H */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -251,6 +251,15 @@ static zend_object *zend_error_exception_new(zend_class_entry *class_type) /* {{
 }
 /* }}} */
 
+/* {{{ proto Exception|Error Exception|Error::__clone()
+   Clone the exception object */
+ZEND_COLD ZEND_METHOD(exception, __clone)
+{
+	/* Should never be executable */
+	zend_throw_exception(NULL, "Cannot clone object using __clone()", 0);
+}
+/* }}} */
+
 /* {{{ proto Exception|Error::__construct(string message, int code [, Throwable previous])
    Exception constructor */
 ZEND_METHOD(exception, __construct)
@@ -391,11 +400,13 @@ ZEND_METHOD(error_exception, __construct)
    Get the file in which the exception occurred */
 ZEND_METHOD(exception, getFile)
 {
-	zval rv;
+	zval *prop, rv;
 
 	DEFAULT_0_PARAMS;
 
-	ZVAL_COPY(return_value, GET_PROPERTY(ZEND_THIS, ZEND_STR_FILE));
+	prop = GET_PROPERTY(ZEND_THIS, ZEND_STR_FILE);
+	ZVAL_DEREF(prop);
+	ZVAL_COPY(return_value, prop);
 }
 /* }}} */
 
@@ -403,11 +414,13 @@ ZEND_METHOD(exception, getFile)
    Get the line in which the exception occurred */
 ZEND_METHOD(exception, getLine)
 {
-	zval rv;
+	zval *prop, rv;
 
 	DEFAULT_0_PARAMS;
 
-	ZVAL_COPY(return_value, GET_PROPERTY(ZEND_THIS, ZEND_STR_LINE));
+	prop = GET_PROPERTY(ZEND_THIS, ZEND_STR_LINE);
+	ZVAL_DEREF(prop);
+	ZVAL_COPY(return_value, prop);
 }
 /* }}} */
 
@@ -415,11 +428,13 @@ ZEND_METHOD(exception, getLine)
    Get the exception message */
 ZEND_METHOD(exception, getMessage)
 {
-	zval rv;
+	zval *prop, rv;
 
 	DEFAULT_0_PARAMS;
 
-	ZVAL_COPY(return_value, GET_PROPERTY(ZEND_THIS, ZEND_STR_MESSAGE));
+	prop = GET_PROPERTY(ZEND_THIS, ZEND_STR_MESSAGE);
+	ZVAL_DEREF(prop);
+	ZVAL_COPY(return_value, prop);
 }
 /* }}} */
 
@@ -427,11 +442,13 @@ ZEND_METHOD(exception, getMessage)
    Get the exception code */
 ZEND_METHOD(exception, getCode)
 {
-	zval rv;
+	zval *prop, rv;
 
 	DEFAULT_0_PARAMS;
 
-	ZVAL_COPY(return_value, GET_PROPERTY(ZEND_THIS, ZEND_STR_CODE));
+	prop = GET_PROPERTY(ZEND_THIS, ZEND_STR_CODE);
+	ZVAL_DEREF(prop);
+	ZVAL_COPY(return_value, prop);
 }
 /* }}} */
 
@@ -439,11 +456,13 @@ ZEND_METHOD(exception, getCode)
    Get the stack trace for the location in which the exception occurred */
 ZEND_METHOD(exception, getTrace)
 {
-	zval rv;
+	zval *prop, rv;
 
 	DEFAULT_0_PARAMS;
 
-	ZVAL_COPY(return_value, GET_PROPERTY(ZEND_THIS, ZEND_STR_TRACE));
+	prop = GET_PROPERTY(ZEND_THIS, ZEND_STR_TRACE);
+	ZVAL_DEREF(prop);
+	ZVAL_COPY(return_value, prop);
 }
 /* }}} */
 
@@ -451,11 +470,13 @@ ZEND_METHOD(exception, getTrace)
    Get the exception severity */
 ZEND_METHOD(error_exception, getSeverity)
 {
-	zval rv;
+	zval *prop, rv;
 
 	DEFAULT_0_PARAMS;
 
-	ZVAL_COPY(return_value, GET_PROPERTY(ZEND_THIS, ZEND_STR_SEVERITY));
+	prop = GET_PROPERTY(ZEND_THIS, ZEND_STR_SEVERITY);
+	ZVAL_DEREF(prop);
+	ZVAL_COPY(return_value, prop);
 }
 /* }}} */
 
@@ -763,6 +784,7 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_exception___construct, 0, 0, 0)
 ZEND_END_ARG_INFO()
 
 static const zend_function_entry default_exception_functions[] = {
+	ZEND_ME(exception, __clone, NULL, ZEND_ACC_PRIVATE|ZEND_ACC_FINAL)
 	ZEND_ME(exception, __construct, arginfo_exception___construct, ZEND_ACC_PUBLIC)
 	ZEND_ME(exception, __wakeup, NULL, ZEND_ACC_PUBLIC)
 	ZEND_ME(exception, getMessage, NULL, ZEND_ACC_PUBLIC|ZEND_ACC_FINAL)
@@ -972,7 +994,7 @@ ZEND_API ZEND_COLD void zend_exception_error(zend_object *ex, int severity) /* {
 		zend_string *str, *file = NULL;
 		zend_long line = 0;
 
-		zend_call_method_with_0_params(&exception, ce_exception, &ex->ce->__tostring, "__tostring", &tmp);
+		zend_call_method_with_0_params(Z_OBJ(exception), ce_exception, &ex->ce->__tostring, "__tostring", &tmp);
 		if (!EG(exception)) {
 			if (Z_TYPE(tmp) != IS_STRING) {
 				zend_error(E_WARNING, "%s::__toString() must return a string", ZSTR_VAL(ce_exception->name));
@@ -1036,13 +1058,3 @@ ZEND_API ZEND_COLD void zend_throw_exception_object(zval *exception) /* {{{ */
 	zend_throw_exception_internal(exception);
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

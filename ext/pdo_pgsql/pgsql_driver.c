@@ -2,7 +2,7 @@
   +----------------------------------------------------------------------+
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2018 The PHP Group                                |
+  | Copyright (c) The PHP Group                                          |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -31,12 +31,6 @@
 #include "pdo/php_pdo_driver.h"
 #include "pdo/php_pdo_error.h"
 #include "ext/standard/file.h"
-
-#undef PACKAGE_BUGREPORT
-#undef PACKAGE_NAME
-#undef PACKAGE_STRING
-#undef PACKAGE_TARNAME
-#undef PACKAGE_VERSION
 #include "pg_config.h" /* needed for PG_VERSION */
 #include "php_pdo_pgsql.h"
 #include "php_pdo_pgsql_int.h"
@@ -1263,12 +1257,3 @@ const pdo_driver_t pdo_pgsql_driver = {
 	PDO_DRIVER_HEADER(pgsql),
 	pdo_pgsql_handle_factory
 };
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

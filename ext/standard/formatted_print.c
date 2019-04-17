@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -23,16 +23,12 @@
 #include "zend_execute.h"
 #include <stdio.h>
 
-#ifdef HAVE_LOCALE_H
 #include <locale.h>
 #ifdef ZTS
 #include "ext/standard/php_string.h"
 #define LCONV_DECIMAL_POINT (*lconv.decimal_point)
 #else
 #define LCONV_DECIMAL_POINT (*lconv->decimal_point)
-#endif
-#else
-#define LCONV_DECIMAL_POINT '.'
 #endif
 
 #define ALIGN_LEFT 0
@@ -232,12 +228,10 @@ php_sprintf_appenddouble(zend_string **buffer, size_t *pos,
 	char *s = NULL;
 	size_t s_len = 0;
 	int is_negative = 0;
-#ifdef HAVE_LOCALE_H
 #ifdef ZTS
 	struct lconv lconv;
 #else
 	struct lconv *lconv;
-#endif
 #endif
 
 	PRINTF_DEBUG(("sprintf: appenddouble(%x, %x, %x, %f, %d, '%c', %d, %c)\n",
@@ -268,12 +262,10 @@ php_sprintf_appenddouble(zend_string **buffer, size_t *pos,
 		case 'E':
 		case 'f':
 		case 'F':
-#ifdef HAVE_LOCALE_H
 #ifdef ZTS
 			localeconv_r(&lconv);
 #else
 			lconv = localeconv();
-#endif
 #endif
 			s = php_conv_fp((fmt == 'f')?'F':fmt, number, 0, precision,
 						(fmt == 'f')?LCONV_DECIMAL_POINT:'.',
@@ -296,12 +288,10 @@ php_sprintf_appenddouble(zend_string **buffer, size_t *pos,
 			/*
 			 * * We use &num_buf[ 1 ], so that we have room for the sign
 			 */
-#ifdef HAVE_LOCALE_H
 #ifdef ZTS
 			localeconv_r(&lconv);
 #else
 			lconv = localeconv();
-#endif
 #endif
 			s = php_gcvt(number, precision, LCONV_DECIMAL_POINT, (fmt == 'G')?'E':'e', &num_buf[1]);
 			is_negative = 0;
@@ -363,7 +353,7 @@ php_sprintf_getnumber(char **buffer, size_t *len)
 
 	if (endptr != NULL) {
 		i = (endptr - *buffer);
-		*len -= endptr - *buffer;
+		*len -= i;
 		*buffer = endptr;
 	}
 	PRINTF_DEBUG(("sprintf_getnumber: number was %d bytes long\n", i));
@@ -833,12 +823,3 @@ PHP_FUNCTION(vfprintf)
 	zend_string_efree(result);
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

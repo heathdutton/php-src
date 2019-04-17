@@ -2,7 +2,7 @@
   +----------------------------------------------------------------------+
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2018 The PHP Group                                |
+  | Copyright (c) The PHP Group                                          |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -52,10 +52,6 @@
 #ifdef HAVE_MBSTATE_T
 #undef HAVE_MBSTATE_T
 #define WE_HAD_MBSTATE_T
-#endif
-
-#if defined(ulong) && !defined(HAVE_ULONG)
-#define HAVE_ULONG
 #endif
 
 #include <my_global.h>
@@ -345,14 +341,3 @@ ZEND_TSRMLS_CACHE_EXTERN()
 ZEND_EXTERN_MODULE_GLOBALS(mysqli)
 
 #endif	/* PHP_MYSQLI_STRUCTS.H */
-
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

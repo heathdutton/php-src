@@ -34,7 +34,13 @@ Class [ <internal:Reflection> class ReflectionClass implements Reflector ] {
     Property [ <default> public $name ]
   }
 
-  - Methods [52] {
+  - Methods [53] {
+    Method [ <internal:Reflection> final private method __clone ] {
+
+      - Parameters [0] {
+      }
+    }
+
     Method [ <internal:Reflection, ctor> public method __construct ] {
 
       - Parameters [1] {
@@ -259,7 +265,7 @@ Class [ <internal:Reflection> class ReflectionClass implements Reflector ] {
     Method [ <internal:Reflection> public method newInstance ] {
 
       - Parameters [1] {
-        Parameter #0 [ <required> $args ]
+        Parameter #0 [ <optional> ...$args ]
       }
     }
 

@@ -14,10 +14,10 @@ if (substr(PHP_OS, 0, 3) == 'WIN') {
 
 /* test is_executable() with file having different filepath notation */
 
-require dirname(__FILE__).'/file.inc';
+require __DIR__.'/file.inc';
 echo "*** Testing is_executable(): usage variations ***\n";
 
-$file_path = dirname(__FILE__);
+$file_path = __DIR__;
 mkdir("$file_path/is_executable_variation1");
 
 // create a new temporary file
@@ -51,7 +51,11 @@ $counter = 1;
    is an executable file */
 foreach($files_arr as $file) {
   echo "-- Iteration $counter --\n";
-  var_dump( is_executable($file) );
+  try {
+    var_dump( is_executable($file) );
+  } catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+  }
   $counter++;
   clearstatcache();
 }
@@ -60,8 +64,8 @@ echo "Done\n";
 ?>
 --CLEAN--
 <?php
-unlink(dirname(__FILE__)."/is_executable_variation1/bar.tmp");
-rmdir(dirname(__FILE__)."/is_executable_variation1/");
+unlink(__DIR__."/is_executable_variation1/bar.tmp");
+rmdir(__DIR__."/is_executable_variation1/");
 ?>
 --EXPECTF--
 *** Testing is_executable(): usage variations ***
@@ -76,13 +80,9 @@ bool(false)
 -- Iteration 5 --
 bool(false)
 -- Iteration 6 --
-
-Warning: is_executable() expects parameter 1 to be a valid path, string given in %s on line %d
-NULL
+is_executable() expects parameter 1 to be a valid path, string given
 -- Iteration 7 --
-
-Warning: is_executable() expects parameter 1 to be a valid path, string given in %s on line %d
-NULL
+is_executable() expects parameter 1 to be a valid path, string given
 -- Iteration 8 --
 bool(false)
 -- Iteration 9 --

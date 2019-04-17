@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -41,6 +41,7 @@ ZEND_API void ZEND_FASTCALL zend_objects_store_destroy(zend_objects_store *objec
 
 ZEND_API void ZEND_FASTCALL zend_objects_store_call_destructors(zend_objects_store *objects)
 {
+	EG(flags) |= EG_FLAGS_OBJECT_STORE_NO_REUSE;
 	if (objects->top > 1) {
 		uint32_t i;
 		for (i = 1; i < objects->top; i++) {
@@ -140,10 +141,10 @@ ZEND_API void ZEND_FASTCALL zend_objects_store_put(zend_object *object)
 {
 	int handle;
 
-	/* When in shutdown sequesnce - do not reuse previously freed handles, to make sure
+	/* When in shutdown sequence - do not reuse previously freed handles, to make sure
 	 * the dtors for newly created objects are called in zend_objects_store_call_destructors() loop
 	 */
-	if (EG(objects_store).free_list_head != -1 && EXPECTED(!(EG(flags) & EG_FLAGS_IN_SHUTDOWN))) {
+	if (EG(objects_store).free_list_head != -1 && EXPECTED(!(EG(flags) & EG_FLAGS_OBJECT_STORE_NO_REUSE))) {
 		handle = EG(objects_store).free_list_head;
 		EG(objects_store).free_list_head = GET_OBJ_BUCKET_NUMBER(EG(objects_store).object_buckets[handle]);
 	} else if (UNEXPECTED(EG(objects_store).top == EG(objects_store).size)) {
@@ -158,12 +159,17 @@ ZEND_API void ZEND_FASTCALL zend_objects_store_put(zend_object *object)
 
 ZEND_API void ZEND_FASTCALL zend_objects_store_del(zend_object *object) /* {{{ */
 {
+	ZEND_ASSERT(GC_REFCOUNT(object) == 0);
+
+	/* GC might have released this object already. */
+	if (UNEXPECTED(GC_TYPE(object) == IS_NULL)) {
+		return;
+	}
+
 	/*	Make sure we hold a reference count during the destructor call
 		otherwise, when the destructor ends the storage might be freed
 		when the refcount reaches 0 a second time
 	 */
-	ZEND_ASSERT(GC_REFCOUNT(object) == 0);
-
 	if (!(OBJ_FLAGS(object) & IS_OBJ_DESTRUCTOR_CALLED)) {
 		GC_ADD_FLAGS(object, IS_OBJ_DESTRUCTOR_CALLED);
 
@@ -194,13 +200,3 @@ ZEND_API void ZEND_FASTCALL zend_objects_store_del(zend_object *object) /* {{{ *
 	}
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

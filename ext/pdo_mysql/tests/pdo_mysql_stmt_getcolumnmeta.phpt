@@ -1,9 +1,9 @@
 --TEST--
 MySQL: PDOStatement->getColumnMeta()
 --SKIPIF--
-<?php # vim:ft=php
-require_once(dirname(__FILE__) . DIRECTORY_SEPARATOR . 'skipif.inc');
-require_once(dirname(__FILE__) . DIRECTORY_SEPARATOR . 'mysql_pdo_test.inc');
+<?php
+require_once(__DIR__ . DIRECTORY_SEPARATOR . 'skipif.inc');
+require_once(__DIR__ . DIRECTORY_SEPARATOR . 'mysql_pdo_test.inc');
 MySQLPDOTest::skip();
 // Too many differences among MySQL version - run only with a recent one
 $db = MySQLPDOTest::factory();
@@ -15,7 +15,7 @@ if ($version < 51)
 ?>
 --FILE--
 <?php
-require_once(dirname(__FILE__) . DIRECTORY_SEPARATOR . 'mysql_pdo_test.inc');
+require_once(__DIR__ . DIRECTORY_SEPARATOR . 'mysql_pdo_test.inc');
 $db = MySQLPDOTest::factory();
 $db->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, true);
 MySQLPDOTest::createTestTable($db);
@@ -30,21 +30,10 @@ try {
 		printf("[002] Expecting false got %s\n", var_export($tmp, true));
 
 	$stmt->execute();
-	// Warning: PDOStatement::getColumnMeta() expects exactly 1 parameter, 0 given in
-	if (false !== ($tmp = @$stmt->getColumnMeta()))
-		printf("[003] Expecting false got %s\n", var_export($tmp, true));
 
 	// invalid offset
 	if (false !== ($tmp = @$stmt->getColumnMeta(-1)))
 		printf("[004] Expecting false got %s\n", var_export($tmp, true));
-
-	// Warning: PDOStatement::getColumnMeta() expects parameter 1 to be int, array given in
-	if (false !== ($tmp = @$stmt->getColumnMeta(array())))
-		printf("[005] Expecting false got %s\n", var_export($tmp, true));
-
-	// Warning: PDOStatement::getColumnMeta() expects exactly 1 parameter, 2 given in
-	if (false !== ($tmp = @$stmt->getColumnMeta(1, 1)))
-		printf("[006] Expecting false got %s\n", var_export($tmp, true));
 
 	$emulated =  $stmt->getColumnMeta(0);
 

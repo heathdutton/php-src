@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -38,9 +38,6 @@
 
 #include <float.h>
 
-typedef unsigned long ulong;
-typedef unsigned int uint;
-
 #define HAVE_STDIOSTR_H 1
 #define HAVE_CLASS_ISTDIOSTREAM
 #define istdiostream stdiostream
@@ -63,8 +60,6 @@ extern "C++" {
 #define zend_isnan(x)	_isnan(x)
 #endif
 
-#define zend_sprintf sprintf
-
 #ifndef __cplusplus
 /* This will cause the compilation process to be MUCH longer, but will generate
  * a much quicker PHP binary
@@ -85,13 +80,3 @@ extern "C++" {
 #define ZEND_DLIMPORT		__declspec(dllimport)
 
 #endif /* ZEND_CONFIG_W32_H */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

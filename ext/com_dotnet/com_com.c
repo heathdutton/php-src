@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -831,6 +831,11 @@ PHP_FUNCTION(com_load_typelib)
 		return;
 	}
 
+	if (!cs) {
+		php_error_docref(NULL, E_WARNING, "Declaration of case-insensitive constants is no longer supported");
+		RETURN_FALSE;
+	}
+
 	RETVAL_FALSE;
 
 	php_com_initialize();
@@ -847,14 +852,3 @@ PHP_FUNCTION(com_load_typelib)
 	}
 }
 /* }}} */
-
-
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

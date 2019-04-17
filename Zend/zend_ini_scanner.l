@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -104,6 +104,7 @@
 #define SCNG	INI_SCNG
 #ifdef ZTS
 ZEND_API ts_rsrc_id ini_scanner_globals_id;
+ZEND_API size_t ini_scanner_globals_offset;
 #else
 ZEND_API zend_ini_scanner_globals ini_scanner_globals;
 #endif

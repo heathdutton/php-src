@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -45,6 +45,8 @@
 BEGIN_EXTERN_C()
 ZEND_API extern int compiler_globals_id;
 ZEND_API extern int executor_globals_id;
+ZEND_API extern size_t compiler_globals_offset;
+ZEND_API extern size_t executor_globals_offset;
 END_EXTERN_C()
 
 #endif
@@ -116,6 +118,8 @@ struct _zend_compiler_globals {
 	zend_arena *ast_arena;
 
 	zend_stack delayed_oplines_stack;
+	HashTable *memoized_exprs;
+	int memoize_mode;
 
 	void   *map_ptr_base;
 	size_t  map_ptr_size;
@@ -223,13 +227,14 @@ struct _zend_executor_globals {
 	zend_function trampoline;
 	zend_op       call_trampoline_op;
 
-	zend_bool each_deprecation_thrown;
+	HashTable weakrefs;
 
 	void *reserved[ZEND_MAX_RESERVED_RESOURCES];
 };
 
-#define EG_FLAGS_INITIAL	0x00
-#define EG_FLAGS_IN_SHUTDOWN	0x01
+#define EG_FLAGS_INITIAL				(0)
+#define EG_FLAGS_IN_SHUTDOWN			(1<<0)
+#define EG_FLAGS_OBJECT_STORE_NO_REUSE	(1<<1)
 
 struct _zend_ini_scanner_globals {
 	zend_file_handle *yy_in;
@@ -296,13 +301,3 @@ struct _zend_php_scanner_globals {
 };
 
 #endif /* ZEND_GLOBALS_H */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

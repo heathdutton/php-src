@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -59,15 +59,8 @@
 	"cause random crashes on SSL requests"
 #   endif
 #  elif defined(HAVE_CURL_GNUTLS)
-#   if defined(HAVE_GCRYPT_H)
-#    define PHP_CURL_NEED_GNUTLS_TSL
-#    include <gcrypt.h>
-#   else
-#    warning \
-	"libcurl was compiled with GnuTLS support, but configure could not find " \
-	"gcrypt.h; thus no SSL crypto locking callbacks will be set, which may " \
-	"cause random crashes on SSL requests"
-#   endif
+    /* Modern versions of GnuTLS use the nette backend rather than gcrypt, so there
+	 * is nothing to do here anymore. */
 #  else
 #   warning \
 	"libcurl was compiled with SSL support, but configure could not determine which" \
@@ -93,7 +86,9 @@ int  le_curl_share_handle;
 #ifdef PHP_CURL_NEED_OPENSSL_TSL /* {{{ */
 static MUTEX_T *php_curl_openssl_tsl = NULL;
 
-static void php_curl_ssl_lock(int mode, int n, const char * file, int line)
+/* Locking callbacks are no longer used since OpenSSL 1.1. Mark the functions as unused to
+ * avoid warnings due to this. */
+static ZEND_ATTRIBUTE_UNUSED void php_curl_ssl_lock(int mode, int n, const char * file, int line)
 {
 	if (mode & CRYPTO_LOCK) {
 		tsrm_mutex_lock(php_curl_openssl_tsl[n]);
@@ -102,47 +97,10 @@ static void php_curl_ssl_lock(int mode, int n, const char * file, int line)
 	}
 }
 
-static unsigned long php_curl_ssl_id(void)
+static ZEND_ATTRIBUTE_UNUSED unsigned long php_curl_ssl_id(void)
 {
 	return (unsigned long) tsrm_thread_id();
 }
-#endif
-/* }}} */
-
-#ifdef PHP_CURL_NEED_GNUTLS_TSL /* {{{ */
-static int php_curl_ssl_mutex_create(void **m)
-{
-	if (*((MUTEX_T *) m) = tsrm_mutex_alloc()) {
-		return SUCCESS;
-	} else {
-		return FAILURE;
-	}
-}
-
-static int php_curl_ssl_mutex_destroy(void **m)
-{
-	tsrm_mutex_free(*((MUTEX_T *) m));
-	return SUCCESS;
-}
-
-static int php_curl_ssl_mutex_lock(void **m)
-{
-	return tsrm_mutex_lock(*((MUTEX_T *) m));
-}
-
-static int php_curl_ssl_mutex_unlock(void **m)
-{
-	return tsrm_mutex_unlock(*((MUTEX_T *) m));
-}
-
-static struct gcry_thread_cbs php_curl_gnutls_tsl = {
-	GCRY_THREAD_OPTION_USER,
-	NULL,
-	php_curl_ssl_mutex_create,
-	php_curl_ssl_mutex_destroy,
-	php_curl_ssl_mutex_lock,
-	php_curl_ssl_mutex_unlock
-};
 #endif
 /* }}} */
 
@@ -1471,9 +1429,6 @@ PHP_MINIT_FUNCTION(curl)
 		CRYPTO_set_locking_callback(php_curl_ssl_lock);
 	}
 #endif
-#ifdef PHP_CURL_NEED_GNUTLS_TSL
-	gcry_control(GCRYCTL_SET_THREAD_CBS, &php_curl_gnutls_tsl);
-#endif
 
 	if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
 		return FAILURE;
@@ -1840,7 +1795,11 @@ static void curl_free_string(void **string)
  */
 static void curl_free_post(void **post)
 {
+#if LIBCURL_VERSION_NUM >= 0x073800 /* 7.56.0 */
+	curl_mime_free((curl_mime *)*post);
+#else
 	curl_formfree((struct HttpPost *)*post);
+#endif
 }
 /* }}} */
 
@@ -2760,15 +2719,27 @@ static int _php_curl_setopt(php_curl *ch, zend_long option, zval *zvalue) /* {{{
 				HashTable *postfields;
 				zend_string *string_key;
 				zend_ulong  num_key;
+#if LIBCURL_VERSION_NUM >= 0x073800 /* 7.56.0 */
+				curl_mime *mime;
+				curl_mimepart *part;
+				CURLcode form_error;
+#else
 				struct HttpPost *first = NULL;
 				struct HttpPost *last  = NULL;
 				CURLFORMcode form_error;
-
+#endif
 				postfields = HASH_OF(zvalue);
 				if (!postfields) {
 					php_error_docref(NULL, E_WARNING, "Couldn't get HashTable in CURLOPT_POSTFIELDS");
 					return FAILURE;
 				}
+
+#if LIBCURL_VERSION_NUM >= 0x073800 /* 7.56.0 */
+				mime = curl_mime_init(ch->cp);
+				if (mime == NULL) {
+					return FAILURE;
+				}
+#endif
 
 				ZEND_HASH_FOREACH_KEY_VAL(postfields, num_key, string_key, current) {
 					zend_string *postval, *tmp_postval;
@@ -2804,6 +2775,20 @@ static int _php_curl_setopt(php_curl *ch, zend_long option, zval *zvalue) /* {{{
 							if (Z_TYPE_P(prop) == IS_STRING && Z_STRLEN_P(prop) > 0) {
 								filename = Z_STRVAL_P(prop);
 							}
+
+#if LIBCURL_VERSION_NUM >= 0x073800 /* 7.56.0 */
+							part = curl_mime_addpart(mime);
+							if (part == NULL) {
+								zend_string_release_ex(string_key, 0);
+								return FAILURE;
+							}
+							if ((form_error = curl_mime_name(part, ZSTR_VAL(string_key))) != CURLE_OK
+								|| (form_error = curl_mime_filedata(part, ZSTR_VAL(postval))) != CURLE_OK
+								|| (form_error = curl_mime_filename(part, filename ? filename : ZSTR_VAL(postval))) != CURLE_OK
+								|| (form_error = curl_mime_type(part, type ? type : "application/octet-stream")) != CURLE_OK) {
+								error = form_error;
+							}
+#else
 							form_error = curl_formadd(&first, &last,
 											CURLFORM_COPYNAME, ZSTR_VAL(string_key),
 											CURLFORM_NAMELENGTH, ZSTR_LEN(string_key),
@@ -2815,6 +2800,7 @@ static int _php_curl_setopt(php_curl *ch, zend_long option, zval *zvalue) /* {{{
 								/* Not nice to convert between enums but we only have place for one error type */
 								error = (CURLcode)form_error;
 							}
+#endif
 						}
 
 						zend_string_release_ex(string_key, 0);
@@ -2823,6 +2809,18 @@ static int _php_curl_setopt(php_curl *ch, zend_long option, zval *zvalue) /* {{{
 
 					postval = zval_get_tmp_string(current, &tmp_postval);
 
+#if LIBCURL_VERSION_NUM >= 0x073800 /* 7.56.0 */
+					part = curl_mime_addpart(mime);
+					if (part == NULL) {
+						zend_tmp_string_release(tmp_postval);
+						zend_string_release_ex(string_key, 0);
+						return FAILURE;
+					}
+					if ((form_error = curl_mime_name(part, ZSTR_VAL(string_key))) != CURLE_OK
+						|| (form_error = curl_mime_data(part, ZSTR_VAL(postval), ZSTR_LEN(postval))) != CURLE_OK) {
+						error = form_error;
+					}
+#else
 					/* The arguments after _NAMELENGTH and _CONTENTSLENGTH
 					 * must be explicitly cast to long in curl_formadd
 					 * use since curl needs a long not an int. */
@@ -2837,6 +2835,7 @@ static int _php_curl_setopt(php_curl *ch, zend_long option, zval *zvalue) /* {{{
 						/* Not nice to convert between enums but we only have place for one error type */
 						error = (CURLcode)form_error;
 					}
+#endif
 					zend_tmp_string_release(tmp_postval);
 					zend_string_release_ex(string_key, 0);
 				} ZEND_HASH_FOREACH_END();
@@ -2849,8 +2848,13 @@ static int _php_curl_setopt(php_curl *ch, zend_long option, zval *zvalue) /* {{{
 				if ((*ch->clone) == 1) {
 					zend_llist_clean(&ch->to_free->post);
 				}
+#if LIBCURL_VERSION_NUM >= 0x073800 /* 7.56.0 */
+				zend_llist_add_element(&ch->to_free->post, &mime);
+				error = curl_easy_setopt(ch->cp, CURLOPT_MIMEPOST, mime);
+#else
 				zend_llist_add_element(&ch->to_free->post, &first);
 				error = curl_easy_setopt(ch->cp, CURLOPT_HTTPPOST, first);
+#endif
 			} else {
 #if LIBCURL_VERSION_NUM >= 0x071101
 				zend_string *tmp_str;
@@ -3113,8 +3117,8 @@ PHP_FUNCTION(curl_exec)
 
 	error = curl_easy_perform(ch->cp);
 	SAVE_CURL_ERROR(ch, error);
-	/* CURLE_PARTIAL_FILE is returned by HEAD requests */
-	if (error != CURLE_OK && error != CURLE_PARTIAL_FILE) {
+
+	if (error != CURLE_OK) {
 		smart_str_free(&ch->handlers->write->buf);
 		RETURN_FALSE;
 	}
@@ -3178,7 +3182,7 @@ PHP_FUNCTION(curl_getinfo)
 		struct curl_certinfo *ci = NULL;
 		zval listcode;
 #endif
-#if LIBCURL_VERSION_NUM >= 0x073700 /* 7.55.0 */
+#if LIBCURL_VERSION_NUM >= 0x073d00 /* 7.61.0 */
 		curl_off_t co;
 #endif
 
@@ -3294,52 +3298,27 @@ PHP_FUNCTION(curl_getinfo)
 			CAAS("scheme", s_code);
 		}
 #endif
-#if LIBCURL_VERSION_NUM >= 0x073700 /* Available since 7.55.0 */
-		if (curl_easy_getinfo(ch->cp, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &co) == CURLE_OK) {
-			CAAL("content_length_download", co);
-		}
-		if (curl_easy_getinfo(ch->cp, CURLINFO_CONTENT_LENGTH_UPLOAD_T, &co) == CURLE_OK) {
-			CAAL("content_length_upload", co);
-		}
-		if (curl_easy_getinfo(ch->cp, CURLINFO_SIZE_DOWNLOAD_T, &co) == CURLE_OK) {
-			CAAL("size_download", co);
-		}
-		if (curl_easy_getinfo(ch->cp, CURLINFO_SIZE_UPLOAD_T, &co) == CURLE_OK) {
-			CAAL("size_upload", co);
-		}
-		if (curl_easy_getinfo(ch->cp, CURLINFO_SPEED_DOWNLOAD_T, &co) == CURLE_OK) {
-			CAAL("speed_download", co);
-		}
-		if (curl_easy_getinfo(ch->cp, CURLINFO_SPEED_UPLOAD_T, &co) == CURLE_OK) {
-			CAAL("speed_upload", co);
-		}
-#endif
-#if LIBCURL_VERSION_NUM >= 0x073b00 /* Available since 7.59.0 */
-		if (curl_easy_getinfo(ch->cp, CURLINFO_FILETIME_T, &co) == CURLE_OK) {
-			CAAL("filetime", co);
-		}
-#endif
 #if LIBCURL_VERSION_NUM >= 0x073d00 /* Available since 7.61.0 */
 		if (curl_easy_getinfo(ch->cp, CURLINFO_APPCONNECT_TIME_T, &co) == CURLE_OK) {
-			CAAL("appconnect_time", co);
+			CAAL("appconnect_time_us", co);
 		}
 		if (curl_easy_getinfo(ch->cp, CURLINFO_CONNECT_TIME_T, &co) == CURLE_OK) {
-			CAAL("connect_time", co);
+			CAAL("connect_time_us", co);
 		}
 		if (curl_easy_getinfo(ch->cp, CURLINFO_NAMELOOKUP_TIME_T, &co) == CURLE_OK) {
-			CAAL("namelookup_time", co);
+			CAAL("namelookup_time_us", co);
 		}
 		if (curl_easy_getinfo(ch->cp, CURLINFO_PRETRANSFER_TIME_T, &co) == CURLE_OK) {
-			CAAL("pretransfer_time", co);
+			CAAL("pretransfer_time_us", co);
 		}
 		if (curl_easy_getinfo(ch->cp, CURLINFO_REDIRECT_TIME_T, &co) == CURLE_OK) {
-			CAAL("redirect_time", co);
+			CAAL("redirect_time_us", co);
 		}
 		if (curl_easy_getinfo(ch->cp, CURLINFO_STARTTRANSFER_TIME_T, &co) == CURLE_OK) {
-			CAAL("starttransfer_time", co);
+			CAAL("starttransfer_time_us", co);
 		}
 		if (curl_easy_getinfo(ch->cp, CURLINFO_TOTAL_TIME_T, &co) == CURLE_OK) {
-			CAAL("total_time", co);
+			CAAL("total_time_us", co);
 		}
 #endif
 		if (ch->header.str) {
@@ -3454,8 +3433,12 @@ PHP_FUNCTION(curl_error)
 		RETURN_FALSE;
 	}
 
-	ch->err.str[CURL_ERROR_SIZE] = 0;
-	RETURN_STRING(ch->err.str);
+	if (ch->err.no) {
+		ch->err.str[CURL_ERROR_SIZE] = 0;
+		RETURN_STRING(ch->err.str);
+	} else {
+		RETURN_EMPTY_STRING();
+	}
 }
 /* }}} */
 
@@ -3764,12 +3747,3 @@ PHP_FUNCTION(curl_pause)
 #endif
 
 #endif /* HAVE_CURL */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: fdm=marker
- * vim: noet sw=4 ts=4
- */

@@ -2,7 +2,7 @@
   +----------------------------------------------------------------------+
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2018 The PHP Group                                |
+  | Copyright (c) The PHP Group                                          |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -209,7 +209,7 @@ static PHP_METHOD(PDO, dbh_constructor)
 	int call_factory = 1;
 	zend_error_handling zeh;
 
-	ZEND_PARSE_PARAMETERS_START_EX(ZEND_PARSE_PARAMS_THROW, 1, 4)
+	ZEND_PARSE_PARAMETERS_START(1, 4)
 		Z_PARAM_STRING(data_source, data_source_len)
 		Z_PARAM_OPTIONAL
 		Z_PARAM_STRING_EX(username, usernamelen, 1, 0)
@@ -272,7 +272,7 @@ static PHP_METHOD(PDO, dbh_constructor)
 		pdo_dbh_t *pdbh = NULL;
 		zval *v;
 
-		if ((v = zend_hash_index_find(Z_ARRVAL_P(options), PDO_ATTR_PERSISTENT)) != NULL) {
+		if ((v = zend_hash_index_find_deref(Z_ARRVAL_P(options), PDO_ATTR_PERSISTENT)) != NULL) {
 			if (Z_TYPE_P(v) == IS_STRING &&
 				!is_numeric_string(Z_STRVAL_P(v), Z_STRLEN_P(v), NULL, NULL, 0) && Z_STRLEN_P(v) > 0) {
 				/* user specified key */
@@ -378,6 +378,7 @@ options:
 				if (str_key) {
 					continue;
 				}
+				ZVAL_DEREF(attr_value);
 				pdo_dbh_attribute_set(dbh, long_key, attr_value);
 			} ZEND_HASH_FOREACH_END();
 		}
@@ -418,13 +419,13 @@ static zval *pdo_stmt_instantiate(pdo_dbh_t *dbh, zval *object, zend_class_entry
 static void pdo_stmt_construct(zend_execute_data *execute_data, pdo_stmt_t *stmt, zval *object, zend_class_entry *dbstmt_ce, zval *ctor_args) /* {{{ */
 {
 	zval query_string;
-	zval z_key;
+	zend_string *key;
 
 	ZVAL_STRINGL(&query_string, stmt->query_string, stmt->query_stringlen);
-	ZVAL_STRINGL(&z_key, "queryString", sizeof("queryString") - 1);
-	zend_std_write_property(object, &z_key, &query_string, NULL);
+	key = zend_string_init("queryString", sizeof("queryString") - 1, 0);
+	zend_std_write_property(Z_OBJ_P(object), key, &query_string, NULL);
 	zval_ptr_dtor(&query_string);
-	zval_ptr_dtor(&z_key);
+	zend_string_release_ex(key, 0);
 
 	if (dbstmt_ce->constructor) {
 		zend_fcall_info fci;
@@ -1349,9 +1350,9 @@ static int dbh_compare(zval *object1, zval *object2)
 	return -1;
 }
 
-static HashTable *dbh_get_gc(zval *object, zval **gc_data, int *gc_count)
+static HashTable *dbh_get_gc(zend_object *object, zval **gc_data, int *gc_count)
 {
-	pdo_dbh_t *dbh = Z_PDO_DBH_P(object);
+	pdo_dbh_t *dbh = php_pdo_dbh_fetch_inner(object);
 	*gc_data = &dbh->def_stmt_ctor_args;
 	*gc_count = 1;
 	return zend_std_get_properties(object);
@@ -1374,6 +1375,7 @@ void pdo_dbh_init(void)
 	pdo_dbh_object_handlers.offset = XtOffsetOf(pdo_dbh_object_t, std);
 	pdo_dbh_object_handlers.dtor_obj = zend_objects_destroy_object;
 	pdo_dbh_object_handlers.free_obj = pdo_dbh_free_storage;
+	pdo_dbh_object_handlers.clone_obj = NULL;
 	pdo_dbh_object_handlers.get_method = dbh_method_get;
 	pdo_dbh_object_handlers.compare_objects = dbh_compare;
 	pdo_dbh_object_handlers.get_gc = dbh_get_gc;
@@ -1556,12 +1558,3 @@ ZEND_RSRC_DTOR_FUNC(php_pdo_pdbh_dtor) /* {{{ */
 	}
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

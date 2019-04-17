@@ -2,7 +2,7 @@
   +----------------------------------------------------------------------+
   | Zend Signal Handling                                                 |
   +----------------------------------------------------------------------+
-  | Copyright (c) 2008-2018 The PHP Group                                     |
+  | Copyright (c) The PHP Group                                          |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -23,9 +23,7 @@
 
 #ifdef ZEND_SIGNALS
 
-# ifdef HAVE_SIGNAL_H
-#  include <signal.h>
-# endif
+#include <signal.h>
 
 #ifndef NSIG
 #define NSIG 65
@@ -65,9 +63,10 @@ typedef struct _zend_signal_globals_t {
 } zend_signal_globals_t;
 
 # ifdef ZTS
-#  define SIGG(v) ZEND_TSRMG(zend_signal_globals_id, zend_signal_globals_t *, v)
+#  define SIGG(v) ZEND_TSRMG_FAST(zend_signal_globals_offset, zend_signal_globals_t *, v)
 BEGIN_EXTERN_C()
 ZEND_API extern int zend_signal_globals_id;
+ZEND_API extern size_t zend_signal_globals_offset;
 END_EXTERN_C()
 # else
 #  define SIGG(v) (zend_signal_globals.v)
@@ -111,13 +110,3 @@ ZEND_API int zend_sigaction(int signo, const struct sigaction *act, struct sigac
 #endif /* ZEND_SIGNALS */
 
 #endif /* ZEND_SIGNAL_H */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

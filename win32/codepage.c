@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -21,6 +21,8 @@
 #include "php.h"
 #include "SAPI.h"
 #include <emmintrin.h>
+
+#include "win32/console.h"
 
 ZEND_TLS const struct php_win32_cp *cur_cp = NULL;
 ZEND_TLS const struct php_win32_cp *orig_cp = NULL;
@@ -103,6 +105,7 @@ PW32CP wchar_t *php_win32_cp_conv_ascii_to_w(const char* in, size_t in_len, size
 {/*{{{*/
 	wchar_t *ret, *ret_idx;
 	const char *idx = in, *end;
+	char ch_err = 0;
 
 	assert(in && in_len ? in[in_len] == '\0' : 1);
 
@@ -121,28 +124,32 @@ PW32CP wchar_t *php_win32_cp_conv_ascii_to_w(const char* in, size_t in_len, size
 
 		/* Process unaligned chunk. */
 		while (idx < aidx) {
-			if (!__isascii(*idx) && '\0' != *idx) {
-				ASCII_FAIL_RETURN()
-			}
+			ch_err |= *idx;
 			idx++;
+		}
+		if (ch_err & 0x80) {
+			ASCII_FAIL_RETURN()
 		}
 
 		/* Process aligned chunk. */
+		__m128i vec_err = _mm_setzero_si128();
 		while (end - idx > 15) {
 			const __m128i block = _mm_load_si128((__m128i *)idx);
-			if (_mm_movemask_epi8(block)) {
-				ASCII_FAIL_RETURN()
-			}
+			vec_err = _mm_or_si128(vec_err, block);
 			idx += 16;
+		}
+		if (_mm_movemask_epi8(vec_err)) {
+			ASCII_FAIL_RETURN()
 		}
 	}
 
 	/* Process the trailing part, or otherwise process string < 16 bytes. */
 	while (idx < end) {
-		if (!__isascii(*idx) && '\0' != *idx) {
-			ASCII_FAIL_RETURN()
-		}
+		ch_err |= *idx;
 		idx++;
+	}
+	if (ch_err & 0x80) {
+		ASCII_FAIL_RETURN()
 	}
 
 	ret = malloc((in_len+1)*sizeof(wchar_t));
@@ -154,9 +161,6 @@ PW32CP wchar_t *php_win32_cp_conv_ascii_to_w(const char* in, size_t in_len, size
 	ret_idx = ret;
 	idx = in;
 
-	/* Check and conversion could be merged. This however would
-		be more expencive, if a non ASCII string was passed.
-		TODO check whether the impact is acceptable. */
 	if (in_len > 15) {
 		const char *aidx = (const char *)ZEND_SLIDE_TO_ALIGNED16(in);
 
@@ -171,16 +175,12 @@ PW32CP wchar_t *php_win32_cp_conv_ascii_to_w(const char* in, size_t in_len, size
 			while (end - idx > 15) {
 				const __m128i block = _mm_load_si128((__m128i *)idx);
 
-				{
-					const __m128i lo = _mm_unpacklo_epi8(block, mask);
-					_mm_storeu_si128((__m128i *)ret_idx, lo);
-				}
+				const __m128i lo = _mm_unpacklo_epi8(block, mask);
+				_mm_storeu_si128((__m128i *)ret_idx, lo);
 
 				ret_idx += 8;
-				{
-					const __m128i hi = _mm_unpackhi_epi8(block, mask);
-					_mm_storeu_si128((__m128i *)ret_idx, hi);
-				}
+				const __m128i hi = _mm_unpackhi_epi8(block, mask);
+				_mm_storeu_si128((__m128i *)ret_idx, hi);
 
 				idx += 16;
 				ret_idx += 8;
@@ -287,11 +287,6 @@ __forceinline static char *php_win32_cp_get_enc(void)
 	}
 
 	return enc;
-}/*}}}*/
-
-__forceinline static BOOL php_win32_cp_is_cli_sapi()
-{/*{{{*/
-	return strlen(sapi_module.name) >= sizeof("cli") - 1 && !strncmp(sapi_module.name, "cli", sizeof("cli") - 1);
 }/*}}}*/
 
 PW32CP const struct php_win32_cp *php_win32_cp_get_current(void)
@@ -473,7 +468,7 @@ PW32CP const struct php_win32_cp *php_win32_cp_do_setup(const char *enc)
 	if (!orig_cp) {
 		orig_cp = php_win32_cp_get_by_id(GetACP());
 	}
-	if (php_win32_cp_is_cli_sapi()) {
+	if (php_win32_console_is_cli_sapi()) {
 		if (!orig_in_cp) {
 			orig_in_cp = php_win32_cp_get_by_id(GetConsoleCP());
 			if (!orig_in_cp) {
@@ -499,7 +494,7 @@ PW32CP const struct php_win32_cp *php_win32_cp_do_update(const char *enc)
 	}
 	cur_cp = php_win32_cp_get_by_enc(enc);
 
-	if (php_win32_cp_is_cli_sapi()) {
+	if (php_win32_console_is_cli_sapi()) {
 		php_win32_cp_cli_do_setup(cur_cp->id);
 	}
 
@@ -574,7 +569,7 @@ PHP_FUNCTION(sapi_windows_cp_set)
 		RETURN_FALSE;
 	}
 
-	if (php_win32_cp_is_cli_sapi()) {
+	if (php_win32_console_is_cli_sapi()) {
 		cp = php_win32_cp_cli_do_setup((DWORD)id);
 	} else {
 		cp = php_win32_cp_set_by_id((DWORD)id);
@@ -705,11 +700,3 @@ PHP_FUNCTION(sapi_windows_cp_conv)
 /* }}} */
 
 /* }}} */
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

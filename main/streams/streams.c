@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -91,7 +91,11 @@ fprintf(stderr, "forget_persistent: %s:%p\n", stream->ops->label, stream);
 
 PHP_RSHUTDOWN_FUNCTION(streams)
 {
-	zend_hash_apply(&EG(persistent_list), forget_persistent_resource_id_numbers);
+	zval *el;
+
+	ZEND_HASH_FOREACH_VAL(&EG(persistent_list), el) {
+		forget_persistent_resource_id_numbers(el);
+	} ZEND_HASH_FOREACH_END();
 	return SUCCESS;
 }
 
@@ -1884,6 +1888,8 @@ PHPAPI int _php_stream_stat_path(const char *path, int flags, php_stream_statbuf
 	const char *path_to_open = path;
 	int ret;
 
+	memset(ssb, 0, sizeof(*ssb));
+
 	if (!(flags & PHP_STREAM_URL_STAT_NOCACHE)) {
 		/* Try to hit the cache first */
 		if (flags & PHP_STREAM_URL_STAT_LINK) {
@@ -2286,12 +2292,3 @@ PHPAPI int _php_stream_scandir(const char *dirname, zend_string **namelist[], in
 	return nfiles;
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

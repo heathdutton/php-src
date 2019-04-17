@@ -2,7 +2,7 @@
   +----------------------------------------------------------------------+
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2018 The PHP Group                                |
+  | Copyright (c) The PHP Group                                          |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -1128,7 +1128,7 @@ static void php_openssl_limit_handshake_reneg(const SSL *ssl) /* {{{ */
 
 			/* Closing the stream inside this callback would segfault! */
 			stream->flags |= PHP_STREAM_FLAG_NO_FCLOSE;
-			if (FAILURE == call_user_function_ex(EG(function_table), NULL, val, &retval, 1, &param, 0, NULL)) {
+			if (FAILURE == call_user_function_ex(NULL, NULL, val, &retval, 1, &param, 0, NULL)) {
 				php_error(E_WARNING, "SSL: failed invoking reneg limit notification callback");
 			}
 			stream->flags ^= PHP_STREAM_FLAG_NO_FCLOSE;
@@ -1873,7 +1873,7 @@ static int php_openssl_enable_crypto(php_stream *stream,
 {
 	int n;
 	int retry = 1;
-	int cert_captured;
+	int cert_captured = 0;
 	X509 *peer_cert;
 
 	if (cparam->inputs.activate && !sslsock->ssl_active) {
@@ -2459,30 +2459,22 @@ static int php_openssl_sockop_set_option(php_stream *stream, int option, int val
 					alive = 0;
 				} else if (php_pollfd_for(sslsock->s.socket, PHP_POLLREADABLE|POLLPRI, &tv) > 0) {
 					if (sslsock->ssl_active) {
-						int n;
-
-						do {
-							n = SSL_peek(sslsock->ssl_handle, &buf, sizeof(buf));
-							if (n <= 0) {
-								int err = SSL_get_error(sslsock->ssl_handle, n);
-
-								if (err == SSL_ERROR_SYSCALL) {
+						int n = SSL_peek(sslsock->ssl_handle, &buf, sizeof(buf));
+						if (n <= 0) {
+							int err = SSL_get_error(sslsock->ssl_handle, n);
+							switch (err) {
+								case SSL_ERROR_SYSCALL:
 									alive = php_socket_errno() == EAGAIN;
 									break;
-								}
-
-								if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
-									/* re-negotiate */
-									continue;
-								}
-
-								/* any other problem is a fatal error */
-								alive = 0;
+								case SSL_ERROR_WANT_READ:
+								case SSL_ERROR_WANT_WRITE:
+									alive = 1;
+									break;
+								default:
+									/* any other problem is a fatal error */
+									alive = 0;
 							}
-							/* either peek succeeded or there was an error; we
-							 * have set the alive flag appropriately */
-							break;
-						} while (1);
+						}
 					} else if (0 == recv(sslsock->s.socket, &buf, sizeof(buf), MSG_PEEK) && php_socket_errno() != EAGAIN) {
 						alive = 0;
 					}
@@ -2747,12 +2739,3 @@ php_stream *php_openssl_ssl_socket_factory(const char *proto, size_t protolen,
 	return stream;
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

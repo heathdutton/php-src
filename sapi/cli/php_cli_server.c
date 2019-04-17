@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -43,12 +43,10 @@
 #if HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#if HAVE_SIGNAL_H
+
 #include <signal.h>
-#endif
-#if HAVE_SETLOCALE
 #include <locale.h>
-#endif
+
 #if HAVE_DLFCN_H
 #include <dlfcn.h>
 #endif
@@ -343,17 +341,16 @@ static void append_essential_headers(smart_str* buffer, php_cli_server_client *c
 	struct timeval tv = {0};
 
 	if (NULL != (val = zend_hash_str_find_ptr(&client->request.headers, "host", sizeof("host")-1))) {
-		smart_str_appendl_ex(buffer, "Host", sizeof("Host") - 1, persistent);
-		smart_str_appendl_ex(buffer, ": ", sizeof(": ") - 1, persistent);
+		smart_str_appends_ex(buffer, "Host: ", persistent);
 		smart_str_appends_ex(buffer, val, persistent);
-		smart_str_appendl_ex(buffer, "\r\n", 2, persistent);
+		smart_str_appends_ex(buffer, "\r\n", persistent);
 	}
 
 	if (!gettimeofday(&tv, NULL)) {
-		zend_string *dt = php_format_date("r", 1, tv.tv_sec, 1);
-		smart_str_appendl_ex(buffer, "Date: ", 6, persistent);
+		zend_string *dt = php_format_date("D, d M Y H:i:s", sizeof("D, d M Y H:i:s") - 1, tv.tv_sec, 0);
+		smart_str_appends_ex(buffer, "Date: ", persistent);
 		smart_str_appends_ex(buffer, dt->val, persistent);
-		smart_str_appendl_ex(buffer, "\r\n", 2, persistent);
+		smart_str_appends_ex(buffer, " GMT\r\n", persistent);
 		zend_string_release_ex(dt, 0);
 	}
 
@@ -633,10 +630,14 @@ static void sapi_cli_server_register_variables(zval *track_vars_array) /* {{{ */
 		char *tmp;
 		if ((tmp = strrchr(client->addr_str, ':'))) {
 			char addr[64], port[8];
+			const char *addr_start = client->addr_str, *addr_end = tmp;
+			if (addr_start[0] == '[') addr_start++;
+			if (addr_end[-1] == ']') addr_end--;
+
 			strncpy(port, tmp + 1, 8);
 			port[7] = '\0';
-			strncpy(addr, client->addr_str, tmp - client->addr_str);
-			addr[tmp - client->addr_str] = '\0';
+			strncpy(addr, addr_start, addr_end - addr_start);
+			addr[addr_end - addr_start] = '\0';
 			sapi_cli_server_register_variable(track_vars_array, "REMOTE_ADDR", addr);
 			sapi_cli_server_register_variable(track_vars_array, "REMOTE_PORT", port);
 		} else {
@@ -1292,9 +1293,6 @@ out:
 
 static int php_cli_server_request_ctor(php_cli_server_request *req) /* {{{ */
 {
-#ifdef ZTS
-ZEND_TSRMLS_CACHE_UPDATE();
-#endif
 	req->protocol_version = 0;
 	req->request_uri = NULL;
 	req->request_uri_len = 0;
@@ -1450,6 +1448,7 @@ static void normalize_vpath(char **retval, size_t *retval_len, const char *vpath
 	char *p;
 
 	*retval = NULL;
+	*retval_len = 0;
 
 	decoded_vpath = pestrndup(vpath, vpath_len, persistent);
 	if (!decoded_vpath) {
@@ -2601,7 +2600,7 @@ int do_cli_server(int argc, char **argv) /* {{{ */
 				PHP_VERSION, buf, server_bind_address, document_root);
 	}
 
-#if defined(HAVE_SIGNAL_H) && defined(SIGINT)
+#if defined(SIGINT)
 	signal(SIGINT, php_cli_server_sigint_handler);
 	zend_signal_init();
 #endif
@@ -2609,12 +2608,3 @@ int do_cli_server(int argc, char **argv) /* {{{ */
 	php_cli_server_dtor(&server);
 	return 0;
 } /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

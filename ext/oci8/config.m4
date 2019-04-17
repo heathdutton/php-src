@@ -168,10 +168,12 @@ EOF
 dnl --with-oci8=shared,instantclient,/path/to/client/dir/lib
 dnl or
 dnl --with-oci8=shared,/path/to/oracle/home
-PHP_ARG_WITH(oci8, for Oracle Database OCI8 support,
-[  --with-oci8[=DIR]         Include Oracle Database OCI8 support. DIR defaults to [$]ORACLE_HOME.
-                          Use --with-oci8=instantclient,/path/to/instant/client/lib
-                          to use an Oracle Instant Client installation])
+PHP_ARG_WITH([oci8],
+  [for Oracle Database OCI8 support],
+  [AS_HELP_STRING([[--with-oci8[=DIR]]],
+    [Include Oracle Database OCI8 support. DIR defaults to $ORACLE_HOME. Use
+    --with-oci8=instantclient,/path/to/instant/client/lib to use an Oracle
+    Instant Client installation])])
 
 if test "$PHP_OCI8" != "no"; then
 
@@ -237,18 +239,17 @@ if test "$PHP_OCI8" != "no"; then
   fi
 
   dnl Set some port specific directory components for use later
-
-  AC_CHECK_SIZEOF(long int, 4)
-  AC_MSG_CHECKING([checking if we're on a 64-bit platform])
-  if test "$ac_cv_sizeof_long_int" = "4"; then
+  AC_CHECK_SIZEOF([long])
+  AC_MSG_CHECKING([if we're at 64-bit platform])
+  AS_IF([test "$ac_cv_sizeof_long" -eq 4],[
     AC_MSG_RESULT([no])
     PHP_OCI8_OH_LIBDIR=lib32
     PHP_OCI8_IC_LIBDIR_SUFFIX=""
-  else
+  ],[
     AC_MSG_RESULT([yes])
     PHP_OCI8_OH_LIBDIR=lib
     PHP_OCI8_IC_LIBDIR_SUFFIX=64
-  fi
+  ])
 
   dnl Determine if the user wants to use Oracle Instant Client libraries
 

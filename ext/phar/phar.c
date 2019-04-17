@@ -2,7 +2,7 @@
   +----------------------------------------------------------------------+
   | phar php single-file executable PHP extension                        |
   +----------------------------------------------------------------------+
-  | Copyright (c) 2005-2018 The PHP Group                                |
+  | Copyright (c) The PHP Group                                          |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -80,7 +80,7 @@ ZEND_INI_MH(phar_ini_modify_handler) /* {{{ */
 
 	if (ZSTR_LEN(entry->name) == sizeof("phar.readonly")-1) {
 		PHAR_G(readonly) = ini;
-		if (PHAR_G(request_init) && HT_FLAGS(&PHAR_G(phar_fname_map))) {
+		if (PHAR_G(request_init) && HT_IS_INITIALIZED(&PHAR_G(phar_fname_map))) {
 			zend_hash_apply_with_argument(&(PHAR_G(phar_fname_map)), phar_set_writeable_bit, (void *)&ini);
 		}
 	} else {
@@ -144,9 +144,9 @@ finish_error:
 				PHAR_G(manifest_cached) = 0;
 				efree(tmp);
 				zend_hash_destroy(&(PHAR_G(phar_fname_map)));
-				HT_FLAGS(&PHAR_G(phar_fname_map)) = 0;
+				HT_INVALIDATE(&PHAR_G(phar_fname_map));
 				zend_hash_destroy(&(PHAR_G(phar_alias_map)));
-				HT_FLAGS(&PHAR_G(phar_alias_map)) = 0;
+				HT_INVALIDATE(&PHAR_G(phar_alias_map));
 				zend_hash_destroy(&cached_phars);
 				zend_hash_destroy(&cached_alias);
 				zend_hash_graceful_reverse_destroy(&EG(regular_list));
@@ -171,8 +171,8 @@ finish_error:
 	zend_hash_destroy(&cached_alias);
 	cached_phars = PHAR_G(phar_fname_map);
 	cached_alias = PHAR_G(phar_alias_map);
-	HT_FLAGS(&PHAR_G(phar_fname_map)) = 0;
-	HT_FLAGS(&PHAR_G(phar_alias_map)) = 0;
+	HT_INVALIDATE(&PHAR_G(phar_fname_map));
+	HT_INVALIDATE(&PHAR_G(phar_alias_map));
 	zend_hash_graceful_reverse_destroy(&EG(regular_list));
 	memset(&EG(regular_list), 0, sizeof(HashTable));
 	efree(tmp);
@@ -218,19 +218,19 @@ void phar_destroy_phar_data(phar_archive_data *phar) /* {{{ */
 		phar->signature = NULL;
 	}
 
-	if (HT_FLAGS(&phar->manifest)) {
+	if (HT_IS_INITIALIZED(&phar->manifest)) {
 		zend_hash_destroy(&phar->manifest);
-		HT_FLAGS(&phar->manifest) = 0;
+		HT_INVALIDATE(&phar->manifest);
 	}
 
-	if (HT_FLAGS(&phar->mounted_dirs)) {
+	if (HT_IS_INITIALIZED(&phar->mounted_dirs)) {
 		zend_hash_destroy(&phar->mounted_dirs);
-		HT_FLAGS(&phar->mounted_dirs) = 0;
+		HT_INVALIDATE(&phar->mounted_dirs);
 	}
 
-	if (HT_FLAGS(&phar->virtual_dirs)) {
+	if (HT_IS_INITIALIZED(&phar->virtual_dirs)) {
 		zend_hash_destroy(&phar->virtual_dirs);
-		HT_FLAGS(&phar->virtual_dirs) = 0;
+		HT_INVALIDATE(&phar->virtual_dirs);
 	}
 
 	if (Z_TYPE(phar->metadata) != IS_UNDEF) {
@@ -1403,6 +1403,9 @@ int phar_create_or_parse_filename(char *fname, size_t fname_len, char *alias, si
 	/* set up our manifest */
 	mydata = ecalloc(1, sizeof(phar_archive_data));
 	mydata->fname = expand_filepath(fname, NULL);
+	if (mydata->fname == NULL) {
+		return FAILURE;
+	}
 	fname_len = strlen(mydata->fname);
 #ifdef PHP_WIN32
 	phar_unixify_path_separators(mydata->fname, fname_len);
@@ -2026,7 +2029,7 @@ next_extension:
 	}
 
 	while (pos != filename && (*(pos - 1) == '/' || *(pos - 1) == '\0')) {
-		pos = memchr(pos + 1, '.', filename_len - (pos - filename) + 1);
+		pos = memchr(pos + 1, '.', filename_len - (pos - filename) - 1);
 		if (!pos) {
 			return FAILURE;
 		}
@@ -3375,6 +3378,9 @@ PHP_GINIT_FUNCTION(phar) /* {{{ */
 	phar_mime_type mime;
 
 	memset(phar_globals, 0, sizeof(zend_phar_globals));
+	HT_INVALIDATE(&phar_globals->phar_persist_map);
+	HT_INVALIDATE(&phar_globals->phar_fname_map);
+	HT_INVALIDATE(&phar_globals->phar_alias_map);
 	phar_globals->readonly = 1;
 
 	zend_hash_init(&phar_globals->mime_types, 0, NULL, mime_type_dtor, 1);
@@ -3520,11 +3526,11 @@ PHP_RSHUTDOWN_FUNCTION(phar) /* {{{ */
 	{
 		phar_release_functions();
 		zend_hash_destroy(&(PHAR_G(phar_alias_map)));
-		HT_FLAGS(&PHAR_G(phar_alias_map)) = 0;
+		HT_INVALIDATE(&PHAR_G(phar_alias_map));
 		zend_hash_destroy(&(PHAR_G(phar_fname_map)));
-		HT_FLAGS(&PHAR_G(phar_fname_map)) = 0;
+		HT_INVALIDATE(&PHAR_G(phar_fname_map));
 		zend_hash_destroy(&(PHAR_G(phar_persist_map)));
-		HT_FLAGS(&PHAR_G(phar_persist_map)) = 0;
+		HT_INVALIDATE(&PHAR_G(phar_persist_map));
 		PHAR_G(phar_SERVER_mung_list) = 0;
 
 		if (PHAR_G(cached_fp)) {
@@ -3609,9 +3615,7 @@ static const zend_module_dep phar_deps[] = {
 	ZEND_MOD_OPTIONAL("openssl")
 	ZEND_MOD_OPTIONAL("zlib")
 	ZEND_MOD_OPTIONAL("standard")
-#if defined(HAVE_HASH) && !defined(COMPILE_DL_HASH)
 	ZEND_MOD_REQUIRED("hash")
-#endif
 	ZEND_MOD_REQUIRED("spl")
 	ZEND_MOD_END
 };
@@ -3634,12 +3638,3 @@ zend_module_entry phar_module_entry = {
 	STANDARD_MODULE_PROPERTIES_EX
 };
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

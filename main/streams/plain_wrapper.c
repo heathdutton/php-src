@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -926,16 +926,15 @@ PHPAPI php_stream_ops	php_stream_stdio_ops = {
 static size_t php_plain_files_dirstream_read(php_stream *stream, char *buf, size_t count)
 {
 	DIR *dir = (DIR*)stream->abstract;
-	/* avoid libc5 readdir problems */
-	char entry[sizeof(struct dirent)+MAXPATHLEN];
-	struct dirent *result = (struct dirent *)&entry;
+	struct dirent *result;
 	php_stream_dirent *ent = (php_stream_dirent*)buf;
 
 	/* avoid problems if someone mis-uses the stream */
 	if (count != sizeof(php_stream_dirent))
 		return 0;
 
-	if (php_readdir_r(dir, (struct dirent *)entry, &result) == 0 && result) {
+	result = readdir(dir);
+	if (result) {
 		PHP_STRLCPY(ent->d_name, result->d_name, sizeof(ent->d_name), strlen(result->d_name));
 		return sizeof(php_stream_dirent);
 	}
@@ -1198,34 +1197,51 @@ static int php_plain_files_rename(php_stream_wrapper *wrapper, const char *url_f
 # ifdef EXDEV
 		if (errno == EXDEV) {
 			zend_stat_t sb;
+# if !defined(ZTS) && !defined(TSRM_WIN32)
+            /* not sure what to do in ZTS case, umask is not thread-safe */
+			int oldmask = umask(077);
+# endif
+			int success = 0;
 			if (php_copy_file(url_from, url_to) == SUCCESS) {
 				if (VCWD_STAT(url_from, &sb) == 0) {
-#  ifndef TSRM_WIN32
-					if (VCWD_CHMOD(url_to, sb.st_mode)) {
-						if (errno == EPERM) {
-							php_error_docref2(NULL, url_from, url_to, E_WARNING, "%s", strerror(errno));
-							VCWD_UNLINK(url_from);
-							return 1;
-						}
-						php_error_docref2(NULL, url_from, url_to, E_WARNING, "%s", strerror(errno));
-						return 0;
-					}
+					success = 1;
+#  if !defined(TSRM_WIN32)
+					/*
+					 * Try to set user and permission info on the target.
+					 * If we're not root, then some of these may fail.
+					 * We try chown first, to set proper group info, relying
+					 * on the system environment to have proper umask to not allow
+					 * access to the file in the meantime.
+					 */
 					if (VCWD_CHOWN(url_to, sb.st_uid, sb.st_gid)) {
-						if (errno == EPERM) {
-							php_error_docref2(NULL, url_from, url_to, E_WARNING, "%s", strerror(errno));
-							VCWD_UNLINK(url_from);
-							return 1;
-						}
 						php_error_docref2(NULL, url_from, url_to, E_WARNING, "%s", strerror(errno));
-						return 0;
+						if (errno != EPERM) {
+							success = 0;
+						}
+					}
+
+					if (success) {
+						if (VCWD_CHMOD(url_to, sb.st_mode)) {
+							php_error_docref2(NULL, url_from, url_to, E_WARNING, "%s", strerror(errno));
+							if (errno != EPERM) {
+								success = 0;
+							}
+						}
 					}
 #  endif
-					VCWD_UNLINK(url_from);
-					return 1;
+					if (success) {
+						VCWD_UNLINK(url_from);
+					}
+				} else {
+					php_error_docref2(NULL, url_from, url_to, E_WARNING, "%s", strerror(errno));
 				}
+			} else {
+				php_error_docref2(NULL, url_from, url_to, E_WARNING, "%s", strerror(errno));
 			}
-			php_error_docref2(NULL, url_from, url_to, E_WARNING, "%s", strerror(errno));
-			return 0;
+#  if !defined(ZTS) && !defined(TSRM_WIN32)
+			umask(oldmask);
+#  endif
+			return success;
 		}
 # endif
 #endif
@@ -1600,12 +1616,3 @@ stream_skip:
 
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

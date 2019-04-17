@@ -11,8 +11,7 @@ Dave Kelsey <d_kelsey@uk.ibm.com>
 
 /* Testing fileowner() with invalid arguments -int, float, bool, NULL, resource */
 
-$file_path = dirname(__FILE__);
-$file_handle = fopen($file_path."/fileowner_variation2.tmp", "w");
+$file_path = __DIR__;
 
 echo "*** Testing Invalid file types ***\n";
 $filenames = array(
@@ -23,7 +22,6 @@ $filenames = array(
   TRUE,
   FALSE,
   NULL,
-  $file_handle,
 
   /* scalars */
   1234,
@@ -35,13 +33,12 @@ foreach( $filenames as $filename ) {
   var_dump( fileowner($filename) );
   clearstatcache();
 }
-fclose($file_handle);
 
 echo "\n*** Done ***";
 ?>
 --CLEAN--
 <?php
-$file_path = dirname(__FILE__);
+$file_path = __DIR__;
 unlink($file_path."/fileowner_variation2.tmp");
 ?>
 --EXPECTF--
@@ -58,9 +55,6 @@ Warning: fileowner(): stat failed for 1 in %s on line %d
 bool(false)
 bool(false)
 bool(false)
-
-Warning: fileowner() expects parameter 1 to be a valid path, resource given in %s on line %d
-NULL
 
 Warning: fileowner(): stat failed for 1234 in %s on line %d
 bool(false)

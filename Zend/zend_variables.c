@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -26,7 +26,11 @@
 #include "zend_constants.h"
 #include "zend_list.h"
 
+#if ZEND_DEBUG
 static void ZEND_FASTCALL zend_string_destroy(zend_string *str);
+#else
+# define zend_string_destroy _efree
+#endif
 static void ZEND_FASTCALL zend_reference_destroy(zend_reference *ref);
 static void ZEND_FASTCALL zend_empty_destroy(zend_reference *ref);
 
@@ -53,6 +57,7 @@ ZEND_API void ZEND_FASTCALL rc_dtor_func(zend_refcounted *p)
 	zend_rc_dtor_func[GC_TYPE(p)](p);
 }
 
+#if ZEND_DEBUG
 static void ZEND_FASTCALL zend_string_destroy(zend_string *str)
 {
 	CHECK_ZVAL_STRING(str);
@@ -61,9 +66,11 @@ static void ZEND_FASTCALL zend_string_destroy(zend_string *str)
 	ZEND_ASSERT(!(GC_FLAGS(str) & IS_STR_PERSISTENT));
 	efree(str);
 }
+#endif
 
 static void ZEND_FASTCALL zend_reference_destroy(zend_reference *ref)
 {
+	ZEND_ASSERT(!ZEND_REF_HAS_TYPE_SOURCES(ref));
 	i_zval_ptr_dtor(&ref->val);
 	efree_size(ref, sizeof(zend_reference));
 }
@@ -124,11 +131,3 @@ ZEND_API void ZEND_FASTCALL zval_copy_ctor_func(zval *zvalue)
 		ZVAL_NEW_STR(zvalue, zend_string_dup(Z_STR_P(zvalue), 0));
 	}
 }
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- */

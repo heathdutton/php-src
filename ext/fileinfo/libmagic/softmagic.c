@@ -423,7 +423,7 @@ private int
 check_fmt(struct magic_set *ms, const char *fmt)
 {
 	pcre2_code *pce;
-	uint32_t re_options, capture_count;
+	uint32_t capture_count;
 	int rv = -1;
 	zend_string *pattern;
 
@@ -432,12 +432,12 @@ check_fmt(struct magic_set *ms, const char *fmt)
 
 	(void)setlocale(LC_CTYPE, "C");
 	pattern = zend_string_init("~%[-0-9\\.]*s~", sizeof("~%[-0-9\\.]*s~") - 1, 0);
-	if ((pce = pcre_get_compiled_regex(pattern, &capture_count, &re_options)) == NULL) {
+	if ((pce = pcre_get_compiled_regex(pattern, &capture_count)) == NULL) {
 		rv = -1;
 	} else {
 		pcre2_match_data *match_data = php_pcre_create_match_data(capture_count, pce);
 		if (match_data) {
-			rv = pcre2_match(pce, (PCRE2_SPTR)fmt, strlen(fmt), 0, re_options, match_data, php_pcre_mctx()) > 0;
+			rv = pcre2_match(pce, (PCRE2_SPTR)fmt, strlen(fmt), 0, 0, match_data, php_pcre_mctx()) > 0;
 			php_pcre_free_match_data(match_data);
 		}
 	}
@@ -2024,18 +2024,18 @@ magiccheck(struct magic_set *ms, struct magic *m)
 			/* pce now contains the compiled regex */
 			zval retval;
 			zval subpats;
-			char *haystack;
+			zend_string *haystack;
 
 			ZVAL_NULL(&retval);
 			ZVAL_NULL(&subpats);
 
 			/* Cut the search len from haystack, equals to REG_STARTEND */
-			haystack = estrndup(ms->search.s, ms->search.s_len);
+			haystack = zend_string_init(ms->search.s, ms->search.s_len, 0);
 
 			/* match v = 0, no match v = 1 */
-			php_pcre_match_impl(pce, haystack, ms->search.s_len, &retval, &subpats, 0, 1, PREG_OFFSET_CAPTURE, 0);
+			php_pcre_match_impl(pce, haystack, &retval, &subpats, 0, 1, PREG_OFFSET_CAPTURE, 0);
 			/* Free haystack */
-			efree(haystack);
+			zend_string_release(haystack);
 
 			if (Z_LVAL(retval) < 0) {
 				zval_ptr_dtor(&subpats);

@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -27,13 +27,14 @@ PHP_FUNCTION(password_get_info);
 PHP_FUNCTION(password_algos);
 
 PHP_MINIT_FUNCTION(password);
+PHP_MSHUTDOWN_FUNCTION(password);
 
 #define PHP_PASSWORD_DEFAULT    PHP_PASSWORD_BCRYPT
 #define PHP_PASSWORD_BCRYPT_COST 10
 
 #if HAVE_ARGON2LIB
 #define PHP_PASSWORD_ARGON2_MEMORY_COST 1<<10
-#define PHP_PASSWORD_ARGON2_TIME_COST 2
+#define PHP_PASSWORD_ARGON2_TIME_COST 3
 #define PHP_PASSWORD_ARGON2_THREADS 2
 #endif
 
@@ -65,11 +66,3 @@ static inline const php_password_algo* php_password_algo_identify(const zend_str
 
 
 #endif
-
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- */

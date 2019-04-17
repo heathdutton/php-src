@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -104,10 +104,8 @@ ZEND_API void rebuild_object_properties(zend_object *zobj) /* {{{ */
 }
 /* }}} */
 
-ZEND_API HashTable *zend_std_get_properties(zval *object) /* {{{ */
+ZEND_API HashTable *zend_std_get_properties(zend_object *zobj) /* {{{ */
 {
-	zend_object *zobj;
-	zobj = Z_OBJ_P(object);
 	if (!zobj->properties) {
 		rebuild_object_properties(zobj);
 	}
@@ -115,15 +113,13 @@ ZEND_API HashTable *zend_std_get_properties(zval *object) /* {{{ */
 }
 /* }}} */
 
-ZEND_API HashTable *zend_std_get_gc(zval *object, zval **table, int *n) /* {{{ */
+ZEND_API HashTable *zend_std_get_gc(zend_object *zobj, zval **table, int *n) /* {{{ */
 {
-	if (Z_OBJ_HANDLER_P(object, get_properties) != zend_std_get_properties) {
+	if (zobj->handlers->get_properties != zend_std_get_properties) {
 		*table = NULL;
 		*n = 0;
-		return Z_OBJ_HANDLER_P(object, get_properties)(object);
+		return zobj->handlers->get_properties(zobj);
 	} else {
-		zend_object *zobj = Z_OBJ_P(object);
-
 		if (zobj->properties) {
 			*table = NULL;
 			*n = 0;
@@ -137,15 +133,15 @@ ZEND_API HashTable *zend_std_get_gc(zval *object, zval **table, int *n) /* {{{ *
 }
 /* }}} */
 
-ZEND_API HashTable *zend_std_get_debug_info(zval *object, int *is_temp) /* {{{ */
+ZEND_API HashTable *zend_std_get_debug_info(zend_object *object, int *is_temp) /* {{{ */
 {
-	zend_class_entry *ce = Z_OBJCE_P(object);
+	zend_class_entry *ce = object->ce;
 	zval retval;
 	HashTable *ht;
 
 	if (!ce->__debugInfo) {
 		*is_temp = 0;
-		return Z_OBJ_HANDLER_P(object, get_properties)(object);
+		return object->handlers->get_properties(object);
 	}
 
 	zend_call_method_with_0_params(object, ce, &ce->__debugInfo, ZEND_DEBUGINFO_FUNC_NAME, &retval);
@@ -373,14 +369,16 @@ static ZEND_COLD zend_never_inline void zend_bad_property_name(void) /* {{{ */
 }
 /* }}} */
 
-static zend_always_inline uintptr_t zend_get_property_offset(zend_class_entry *ce, zend_string *member, int silent, void **cache_slot) /* {{{ */
+static zend_always_inline uintptr_t zend_get_property_offset(zend_class_entry *ce, zend_string *member, int silent, void **cache_slot, zend_property_info **info_ptr) /* {{{ */
 {
 	zval *zv;
 	zend_property_info *property_info;
 	uint32_t flags;
 	zend_class_entry *scope;
+	uintptr_t offset;
 
 	if (cache_slot && EXPECTED(ce == CACHED_PTR_EX(cache_slot))) {
+		*info_ptr = CACHED_PTR_EX(cache_slot + 2);
 		return (uintptr_t)CACHED_PTR_EX(cache_slot + 1);
 	}
 
@@ -395,6 +393,7 @@ static zend_always_inline uintptr_t zend_get_property_offset(zend_class_entry *c
 dynamic:
 		if (cache_slot) {
 			CACHE_POLYMORPHIC_PTR_EX(cache_slot, ce, (void*)ZEND_DYNAMIC_PROPERTY_OFFSET);
+			CACHE_PTR_EX(cache_slot + 2, NULL);
 		}
 		return ZEND_DYNAMIC_PROPERTY_OFFSET;
 	}
@@ -448,10 +447,27 @@ found:
 		}
 		return ZEND_DYNAMIC_PROPERTY_OFFSET;
 	}
-	if (cache_slot) {
-		CACHE_POLYMORPHIC_PTR_EX(cache_slot, ce, (void*)(uintptr_t)property_info->offset);
+
+	offset = property_info->offset;
+	if (EXPECTED(!property_info->type)) {
+		property_info = NULL;
+	} else {
+		*info_ptr = property_info;
 	}
-	return property_info->offset;
+	if (cache_slot) {
+		CACHE_POLYMORPHIC_PTR_EX(cache_slot, ce, (void*)(uintptr_t)offset);
+		CACHE_PTR_EX(cache_slot + 2, property_info);
+	}
+	return offset;
+}
+/* }}} */
+
+static zend_never_inline void zend_wrong_offset(zend_class_entry *ce, zend_string *member) /* {{{ */
+{
+	zend_property_info *dummy;
+
+	/* Trigger the correct error */
+	zend_get_property_offset(ce, member, 0, NULL, &dummy);
 }
 /* }}} */
 
@@ -627,23 +643,20 @@ ZEND_API uint32_t *zend_get_property_guard(zend_object *zobj, zend_string *membe
 }
 /* }}} */
 
-ZEND_API zval *zend_std_read_property(zval *object, zval *member, int type, void **cache_slot, zval *rv) /* {{{ */
+ZEND_API zval *zend_std_read_property(zend_object *zobj, zend_string *name, int type, void **cache_slot, zval *rv) /* {{{ */
 {
-	zend_object *zobj;
-	zend_string *name, *tmp_name;
 	zval *retval;
 	uintptr_t property_offset;
+	zend_property_info *prop_info = NULL;
 	uint32_t *guard = NULL;
-
-	zobj = Z_OBJ_P(object);
-	name = zval_get_tmp_string(member, &tmp_name);
+	zend_string *tmp_name = NULL;
 
 #if DEBUG_OBJECT_HANDLERS
-	fprintf(stderr, "Read object #%d property: %s\n", Z_OBJ_HANDLE_P(object), ZSTR_VAL(name));
+	fprintf(stderr, "Read object #%d property: %s\n", zobj->handle, ZSTR_VAL(name));
 #endif
 
 	/* make zend_get_property_info silent if we have getter - we may want to use it */
-	property_offset = zend_get_property_offset(zobj->ce, name, (type == BP_VAR_IS) || (zobj->ce->__get != NULL), cache_slot);
+	property_offset = zend_get_property_offset(zobj->ce, name, (type == BP_VAR_IS) || (zobj->ce->__get != NULL), cache_slot, &prop_info);
 
 	if (EXPECTED(IS_VALID_PROPERTY_OFFSET(property_offset))) {
 		retval = OBJ_PROP(zobj, property_offset);
@@ -737,19 +750,30 @@ call_getter:
 			} else {
 				retval = &EG(uninitialized_zval);
 			}
+
+			if (UNEXPECTED(prop_info)) {
+				zend_verify_prop_assignable_by_ref(prop_info, retval, (zobj->ce->__get->common.fn_flags & ZEND_ACC_STRICT_TYPES) != 0);
+			}
+
 			OBJ_RELEASE(zobj);
 			goto exit;
 		} else if (UNEXPECTED(IS_WRONG_PROPERTY_OFFSET(property_offset))) {
 			/* Trigger the correct error */
-			zend_get_property_offset(zobj->ce, name, 0, NULL);
+			zend_get_property_offset(zobj->ce, name, 0, NULL, &prop_info);
 			ZEND_ASSERT(EG(exception));
 			retval = &EG(uninitialized_zval);
 			goto exit;
 		}
 	}
 
-	if ((type != BP_VAR_IS)) {
-		zend_error(E_NOTICE,"Undefined property: %s::$%s", ZSTR_VAL(zobj->ce->name), ZSTR_VAL(name));
+	if (type != BP_VAR_IS) {
+		if (UNEXPECTED(prop_info)) {
+			zend_throw_error(NULL, "Typed property %s::$%s must not be accessed before initialization",
+				ZSTR_VAL(prop_info->ce->name),
+				ZSTR_VAL(name));
+		} else {
+			zend_error(E_NOTICE,"Undefined property: %s::$%s", ZSTR_VAL(zobj->ce->name), ZSTR_VAL(name));
+		}
 	}
 	retval = &EG(uninitialized_zval);
 
@@ -760,22 +784,33 @@ exit:
 }
 /* }}} */
 
-ZEND_API void zend_std_write_property(zval *object, zval *member, zval *value, void **cache_slot) /* {{{ */
+ZEND_API zval *zend_std_write_property(zend_object *zobj, zend_string *name, zval *value, void **cache_slot) /* {{{ */
 {
-	zend_object *zobj;
-	zend_string *name, *tmp_name;
-	zval *variable_ptr;
+	zval *variable_ptr, tmp;
 	uintptr_t property_offset;
+	zend_property_info *prop_info = NULL;
+	ZEND_ASSERT(!Z_ISREF_P(value));
 
-	zobj = Z_OBJ_P(object);
-	name = zval_get_tmp_string(member, &tmp_name);
-
-	property_offset = zend_get_property_offset(zobj->ce, name, (zobj->ce->__set != NULL), cache_slot);
+	property_offset = zend_get_property_offset(zobj->ce, name, (zobj->ce->__set != NULL), cache_slot, &prop_info);
 
 	if (EXPECTED(IS_VALID_PROPERTY_OFFSET(property_offset))) {
 		variable_ptr = OBJ_PROP(zobj, property_offset);
 		if (Z_TYPE_P(variable_ptr) != IS_UNDEF) {
-			goto found;
+			Z_TRY_ADDREF_P(value);
+
+			if (UNEXPECTED(prop_info)) {
+				ZVAL_COPY_VALUE(&tmp, value);
+				if (UNEXPECTED(!zend_verify_property_type(prop_info, &tmp, EG(current_execute_data) && ZEND_CALL_USES_STRICT_TYPES(EG(current_execute_data))))) {
+					Z_TRY_DELREF_P(value);
+					variable_ptr = &EG(error_zval);
+					goto exit;
+				}
+				value = &tmp;
+			}
+
+found:
+			zend_assign_to_variable(variable_ptr, value, IS_TMP_VAR, EG(current_execute_data) && ZEND_CALL_USES_STRICT_TYPES(EG(current_execute_data)));
+			goto exit;
 		}
 	} else if (EXPECTED(IS_DYNAMIC_PROPERTY_OFFSET(property_offset))) {
 		if (EXPECTED(zobj->properties != NULL)) {
@@ -786,12 +821,12 @@ ZEND_API void zend_std_write_property(zval *object, zval *member, zval *value, v
 				zobj->properties = zend_array_dup(zobj->properties);
 			}
 			if ((variable_ptr = zend_hash_find(zobj->properties, name)) != NULL) {
-found:
-				zend_assign_to_variable(variable_ptr, value, IS_CV);
-				goto exit;
+				Z_TRY_ADDREF_P(value);
+				goto found;
 			}
 		}
 	} else if (UNEXPECTED(EG(exception))) {
+		variable_ptr = &EG(error_zval);
 		goto exit;
 	}
 
@@ -799,46 +834,51 @@ found:
 	if (zobj->ce->__set) {
 		uint32_t *guard = zend_get_property_guard(zobj, name);
 
-	    if (!((*guard) & IN_SET)) {
+		if (!((*guard) & IN_SET)) {
 			GC_ADDREF(zobj);
 			(*guard) |= IN_SET; /* prevent circular setting */
 			zend_std_call_setter(zobj, name, value);
 			(*guard) &= ~IN_SET;
 			OBJ_RELEASE(zobj);
+			variable_ptr = value;
 		} else if (EXPECTED(!IS_WRONG_PROPERTY_OFFSET(property_offset))) {
 			goto write_std_property;
 		} else {
 			/* Trigger the correct error */
-			zend_get_property_offset(zobj->ce, name, 0, NULL);
+			zend_wrong_offset(zobj->ce, name);
 			ZEND_ASSERT(EG(exception));
+			variable_ptr = &EG(error_zval);
 			goto exit;
 		}
 	} else {
 		ZEND_ASSERT(!IS_WRONG_PROPERTY_OFFSET(property_offset));
 write_std_property:
-		if (Z_REFCOUNTED_P(value)) {
-			if (Z_ISREF_P(value)) {
-				/* if we assign referenced variable, we should separate it */
-				value = Z_REFVAL_P(value);
-				if (Z_REFCOUNTED_P(value)) {
-					Z_ADDREF_P(value);
-				}
-			} else {
-				Z_ADDREF_P(value);
-			}
-		}
+		Z_TRY_ADDREF_P(value);
 		if (EXPECTED(IS_VALID_PROPERTY_OFFSET(property_offset))) {
-			ZVAL_COPY_VALUE(OBJ_PROP(zobj, property_offset), value);
+
+			variable_ptr = OBJ_PROP(zobj, property_offset);
+
+			if (UNEXPECTED(prop_info)) {
+				ZVAL_COPY_VALUE(&tmp, value);
+				if (UNEXPECTED(!zend_verify_property_type(prop_info, &tmp, ZEND_CALL_USES_STRICT_TYPES(EG(current_execute_data))))) {
+					zval_ptr_dtor(value);
+					goto exit;
+				}
+				value = &tmp;
+				goto found; /* might have been updated via e.g. __toString() */
+			}
+
+			ZVAL_COPY_VALUE(variable_ptr, value);
 		} else {
 			if (!zobj->properties) {
 				rebuild_object_properties(zobj);
 			}
-			zend_hash_add_new(zobj->properties, name, value);
+			variable_ptr = zend_hash_add_new(zobj->properties, name, value);
 		}
 	}
 
 exit:
-	zend_tmp_string_release(tmp_name);
+	return variable_ptr;
 }
 /* }}} */
 
@@ -848,10 +888,10 @@ static ZEND_COLD zend_never_inline void zend_bad_array_access(zend_class_entry *
 }
 /* }}} */
 
-ZEND_API zval *zend_std_read_dimension(zval *object, zval *offset, int type, zval *rv) /* {{{ */
+ZEND_API zval *zend_std_read_dimension(zend_object *object, zval *offset, int type, zval *rv) /* {{{ */
 {
-	zend_class_entry *ce = Z_OBJCE_P(object);
-	zval tmp_offset, tmp_object;
+	zend_class_entry *ce = object->ce;
+	zval tmp_offset;
 
 	if (EXPECTED(instanceof_function_ex(ce, zend_ce_arrayaccess, 1) != 0)) {
 		if (offset == NULL) {
@@ -861,16 +901,16 @@ ZEND_API zval *zend_std_read_dimension(zval *object, zval *offset, int type, zva
 			ZVAL_COPY_DEREF(&tmp_offset, offset);
 		}
 
-		ZVAL_COPY(&tmp_object, object);
+		GC_ADDREF(object);
 		if (type == BP_VAR_IS) {
-			zend_call_method_with_1_params(&tmp_object, ce, NULL, "offsetexists", rv, &tmp_offset);
+			zend_call_method_with_1_params(object, ce, NULL, "offsetexists", rv, &tmp_offset);
 			if (UNEXPECTED(Z_ISUNDEF_P(rv))) {
-				zval_ptr_dtor(&tmp_object);
+				OBJ_RELEASE(object);
 				zval_ptr_dtor(&tmp_offset);
 				return NULL;
 			}
 			if (!i_zend_is_true(rv)) {
-				zval_ptr_dtor(&tmp_object);
+				OBJ_RELEASE(object);
 				zval_ptr_dtor(&tmp_offset);
 				zval_ptr_dtor(rv);
 				return &EG(uninitialized_zval);
@@ -878,9 +918,9 @@ ZEND_API zval *zend_std_read_dimension(zval *object, zval *offset, int type, zva
 			zval_ptr_dtor(rv);
 		}
 
-		zend_call_method_with_1_params(&tmp_object, ce, NULL, "offsetget", rv, &tmp_offset);
+		zend_call_method_with_1_params(object, ce, NULL, "offsetget", rv, &tmp_offset);
 
-		zval_ptr_dtor(&tmp_object);
+		OBJ_RELEASE(object);
 		zval_ptr_dtor(&tmp_offset);
 
 		if (UNEXPECTED(Z_TYPE_P(rv) == IS_UNDEF)) {
@@ -897,10 +937,10 @@ ZEND_API zval *zend_std_read_dimension(zval *object, zval *offset, int type, zva
 }
 /* }}} */
 
-ZEND_API void zend_std_write_dimension(zval *object, zval *offset, zval *value) /* {{{ */
+ZEND_API void zend_std_write_dimension(zend_object *object, zval *offset, zval *value) /* {{{ */
 {
-	zend_class_entry *ce = Z_OBJCE_P(object);
-	zval tmp_offset, tmp_object;
+	zend_class_entry *ce = object->ce;
+	zval tmp_offset;
 
 	if (EXPECTED(instanceof_function_ex(ce, zend_ce_arrayaccess, 1) != 0)) {
 		if (!offset) {
@@ -908,9 +948,9 @@ ZEND_API void zend_std_write_dimension(zval *object, zval *offset, zval *value) 
 		} else {
 			ZVAL_COPY_DEREF(&tmp_offset, offset);
 		}
-		ZVAL_COPY(&tmp_object, object);
-		zend_call_method_with_2_params(&tmp_object, ce, NULL, "offsetset", NULL, &tmp_offset, value);
-		zval_ptr_dtor(&tmp_object);
+		GC_ADDREF(object);
+		zend_call_method_with_2_params(object, ce, NULL, "offsetset", NULL, &tmp_offset, value);
+		OBJ_RELEASE(object);
 		zval_ptr_dtor(&tmp_offset);
 	} else {
 	    zend_bad_array_access(ce);
@@ -918,24 +958,24 @@ ZEND_API void zend_std_write_dimension(zval *object, zval *offset, zval *value) 
 }
 /* }}} */
 
-ZEND_API int zend_std_has_dimension(zval *object, zval *offset, int check_empty) /* {{{ */
+ZEND_API int zend_std_has_dimension(zend_object *object, zval *offset, int check_empty) /* {{{ */
 {
-	zend_class_entry *ce = Z_OBJCE_P(object);
-	zval retval, tmp_offset, tmp_object;
+	zend_class_entry *ce = object->ce;
+	zval retval, tmp_offset;
 	int result;
 
 	if (EXPECTED(instanceof_function_ex(ce, zend_ce_arrayaccess, 1) != 0)) {
 		ZVAL_COPY_DEREF(&tmp_offset, offset);
-		ZVAL_COPY(&tmp_object, object);
-		zend_call_method_with_1_params(&tmp_object, ce, NULL, "offsetexists", &retval, &tmp_offset);
+		GC_ADDREF(object);
+		zend_call_method_with_1_params(object, ce, NULL, "offsetexists", &retval, &tmp_offset);
 		result = i_zend_is_true(&retval);
 		zval_ptr_dtor(&retval);
 		if (check_empty && result && EXPECTED(!EG(exception))) {
-			zend_call_method_with_1_params(&tmp_object, ce, NULL, "offsetget", &retval, &tmp_offset);
+			zend_call_method_with_1_params(object, ce, NULL, "offsetget", &retval, &tmp_offset);
 			result = i_zend_is_true(&retval);
 			zval_ptr_dtor(&retval);
 		}
-		zval_ptr_dtor(&tmp_object);
+		OBJ_RELEASE(object);
 		zval_ptr_dtor(&tmp_offset);
 	} else {
 	    zend_bad_array_access(ce);
@@ -945,31 +985,25 @@ ZEND_API int zend_std_has_dimension(zval *object, zval *offset, int check_empty)
 }
 /* }}} */
 
-ZEND_API zval *zend_std_get_property_ptr_ptr(zval *object, zval *member, int type, void **cache_slot) /* {{{ */
+ZEND_API zval *zend_std_get_property_ptr_ptr(zend_object *zobj, zend_string *name, int type, void **cache_slot) /* {{{ */
 {
-	zend_object *zobj;
-	zend_string *name, *tmp_name;
 	zval *retval = NULL;
 	uintptr_t property_offset;
-
-	zobj = Z_OBJ_P(object);
-	name = zval_get_tmp_string(member, &tmp_name);
+	zend_property_info *prop_info = NULL;
 
 #if DEBUG_OBJECT_HANDLERS
-	fprintf(stderr, "Ptr object #%d property: %s\n", Z_OBJ_HANDLE_P(object), ZSTR_VAL(name));
+	fprintf(stderr, "Ptr object #%d property: %s\n", object->handle, ZSTR_VAL(name));
 #endif
 
-	property_offset = zend_get_property_offset(zobj->ce, name, (zobj->ce->__get != NULL), cache_slot);
+	property_offset = zend_get_property_offset(zobj->ce, name, (zobj->ce->__get != NULL), cache_slot, &prop_info);
 
 	if (EXPECTED(IS_VALID_PROPERTY_OFFSET(property_offset))) {
 		retval = OBJ_PROP(zobj, property_offset);
 		if (UNEXPECTED(Z_TYPE_P(retval) == IS_UNDEF)) {
 			if (EXPECTED(!zobj->ce->__get) ||
 			    UNEXPECTED((*zend_get_property_guard(zobj, name)) & IN_GET)) {
-				ZVAL_NULL(retval);
-				/* Notice is thrown after creation of the property, to avoid EG(std_property_info)
-				 * being overwritten in an error handler. */
 				if (UNEXPECTED(type == BP_VAR_RW || type == BP_VAR_R)) {
+					ZVAL_NULL(retval);
 					zend_error(E_NOTICE, "Undefined property: %s::$%s", ZSTR_VAL(zobj->ce->name), ZSTR_VAL(name));
 				}
 			} else {
@@ -986,7 +1020,6 @@ ZEND_API zval *zend_std_get_property_ptr_ptr(zval *object, zval *member, int typ
 				zobj->properties = zend_array_dup(zobj->properties);
 			}
 		    if (EXPECTED((retval = zend_hash_find(zobj->properties, name)) != NULL)) {
-				zend_tmp_string_release(tmp_name);
 				return retval;
 		    }
 		}
@@ -1004,32 +1037,33 @@ ZEND_API zval *zend_std_get_property_ptr_ptr(zval *object, zval *member, int typ
 		}
 	}
 
-	zend_tmp_string_release(tmp_name);
 	return retval;
 }
 /* }}} */
 
-ZEND_API void zend_std_unset_property(zval *object, zval *member, void **cache_slot) /* {{{ */
+ZEND_API void zend_std_unset_property(zend_object *zobj, zend_string *name, void **cache_slot) /* {{{ */
 {
-	zend_object *zobj;
-	zend_string *name, *tmp_name;
 	uintptr_t property_offset;
+	zend_property_info *prop_info = NULL;
 
-	zobj = Z_OBJ_P(object);
-	name = zval_get_tmp_string(member, &tmp_name);
-
-	property_offset = zend_get_property_offset(zobj->ce, name, (zobj->ce->__unset != NULL), cache_slot);
+	property_offset = zend_get_property_offset(zobj->ce, name, (zobj->ce->__unset != NULL), cache_slot, &prop_info);
 
 	if (EXPECTED(IS_VALID_PROPERTY_OFFSET(property_offset))) {
 		zval *slot = OBJ_PROP(zobj, property_offset);
 
 		if (Z_TYPE_P(slot) != IS_UNDEF) {
+			if (UNEXPECTED(Z_ISREF_P(slot)) &&
+					(ZEND_DEBUG || ZEND_REF_HAS_TYPE_SOURCES(Z_REF_P(slot)))) {
+				if (prop_info) {
+					ZEND_REF_DEL_TYPE_SOURCE(Z_REF_P(slot), prop_info);
+				}
+			}
 			zval_ptr_dtor(slot);
 			ZVAL_UNDEF(slot);
 			if (zobj->properties) {
 				HT_FLAGS(zobj->properties) |= HASH_FLAG_HAS_EMPTY_IND;
 			}
-			goto exit;
+			return;
 		}
 	} else if (EXPECTED(IS_DYNAMIC_PROPERTY_OFFSET(property_offset))
 	 && EXPECTED(zobj->properties != NULL)) {
@@ -1040,10 +1074,10 @@ ZEND_API void zend_std_unset_property(zval *object, zval *member, void **cache_s
 			zobj->properties = zend_array_dup(zobj->properties);
 		}
 		if (EXPECTED(zend_hash_del(zobj->properties, name) != FAILURE)) {
-			goto exit;
+			return;
 		}
 	} else if (UNEXPECTED(EG(exception))) {
-		goto exit;
+		return;
 	}
 
 	/* magic unset */
@@ -1056,29 +1090,26 @@ ZEND_API void zend_std_unset_property(zval *object, zval *member, void **cache_s
 			(*guard) &= ~IN_UNSET;
 		} else if (UNEXPECTED(IS_WRONG_PROPERTY_OFFSET(property_offset))) {
 			/* Trigger the correct error */
-			zend_get_property_offset(zobj->ce, name, 0, NULL);
+			zend_wrong_offset(zobj->ce, name);
 			ZEND_ASSERT(EG(exception));
-			goto exit;
+			return;
 		} else {
 			/* Nothing to do: The property already does not exist. */
 		}
 	}
-
-exit:
-	zend_tmp_string_release(tmp_name);
 }
 /* }}} */
 
-ZEND_API void zend_std_unset_dimension(zval *object, zval *offset) /* {{{ */
+ZEND_API void zend_std_unset_dimension(zend_object *object, zval *offset) /* {{{ */
 {
-	zend_class_entry *ce = Z_OBJCE_P(object);
-	zval tmp_offset, tmp_object;
+	zend_class_entry *ce = object->ce;
+	zval tmp_offset;
 
 	if (instanceof_function_ex(ce, zend_ce_arrayaccess, 1)) {
 		ZVAL_COPY_DEREF(&tmp_offset, offset);
-		ZVAL_COPY(&tmp_object, object);
-		zend_call_method_with_1_params(&tmp_object, ce, NULL, "offsetunset", NULL, &tmp_offset);
-		zval_ptr_dtor(&tmp_object);
+		GC_ADDREF(object);
+		zend_call_method_with_1_params(object, ce, NULL, "offsetunset", NULL, &tmp_offset);
+		OBJ_RELEASE(object);
 		zval_ptr_dtor(&tmp_offset);
 	} else {
 	    zend_bad_array_access(ce);
@@ -1163,7 +1194,7 @@ ZEND_API zend_function *zend_get_call_trampoline_func(zend_class_entry *ce, zend
 	func->opcodes = &EG(call_trampoline_op);
 	ZEND_MAP_PTR_INIT(func->run_time_cache, (void***)&dummy);
 	func->scope = fbc->common.scope;
-	/* reserve space for arguments, local and temorary variables */
+	/* reserve space for arguments, local and temporary variables */
 	func->T = (fbc->type == ZEND_USER_FUNCTION)? MAX(fbc->op_array.last_var + fbc->op_array.T, 2) : 2;
 	func->filename = (fbc->type == ZEND_USER_FUNCTION)? fbc->op_array.filename : ZSTR_EMPTY_ALLOC();
 	func->line_start = (fbc->type == ZEND_USER_FUNCTION)? fbc->op_array.line_start : 0;
@@ -1176,6 +1207,11 @@ ZEND_API zend_function *zend_get_call_trampoline_func(zend_class_entry *ce, zend
 	} else {
 		func->function_name = zend_string_copy(method_name);
 	}
+
+	func->prototype = NULL;
+	func->num_args = 0;
+	func->required_num_args = 0;
+	func->arg_info = 0;
 
 	return (zend_function*)func;
 }
@@ -1346,14 +1382,14 @@ ZEND_API zend_function *zend_std_get_static_method(zend_class_entry *ce, zend_st
 }
 /* }}} */
 
-static void zend_intenal_class_init_statics(zend_class_entry *class_type) /* {{{ */
+ZEND_API void zend_class_init_statics(zend_class_entry *class_type) /* {{{ */
 {
 	int i;
 	zval *p;
 
-	if (!CE_STATIC_MEMBERS(class_type) && class_type->default_static_members_count) {
+	if (class_type->default_static_members_count && !CE_STATIC_MEMBERS(class_type)) {
 		if (class_type->parent) {
-			zend_intenal_class_init_statics(class_type->parent);
+			zend_class_init_statics(class_type->parent);
 		}
 
 		ZEND_MAP_PTR_SET(class_type->static_members_table, emalloc(sizeof(zval) * class_type->default_static_members_count));
@@ -1370,16 +1406,12 @@ static void zend_intenal_class_init_statics(zend_class_entry *class_type) /* {{{
 	}
 } /* }}} */
 
-ZEND_API void zend_class_init_statics(zend_class_entry *class_type) /* {{{ */
+ZEND_API zval *zend_std_get_static_property_with_info(zend_class_entry *ce, zend_string *property_name, int type, zend_property_info **property_info_ptr) /* {{{ */
 {
-	zend_intenal_class_init_statics(class_type);
-} /* }}} */
-
-ZEND_API zval *zend_std_get_static_property(zend_class_entry *ce, zend_string *property_name, zend_bool silent) /* {{{ */
-{
-	zend_property_info *property_info = zend_hash_find_ptr(&ce->properties_info, property_name);
-	zend_class_entry *scope;
 	zval *ret;
+	zend_class_entry *scope;
+	zend_property_info *property_info = zend_hash_find_ptr(&ce->properties_info, property_name);
+	*property_info_ptr = property_info;
 
 	if (UNEXPECTED(property_info == NULL)) {
 		goto undeclared_property;
@@ -1394,7 +1426,7 @@ ZEND_API zval *zend_std_get_static_property(zend_class_entry *ce, zend_string *p
 		if (property_info->ce != scope) {
 			if (UNEXPECTED(property_info->flags & ZEND_ACC_PRIVATE)
 			 || UNEXPECTED(!is_protected_compatible_scope(property_info->ce, scope))) {
-				if (!silent) {
+				if (type != BP_VAR_IS) {
 					zend_bad_property_access(property_info, ce, property_name);
 				}
 				return NULL;
@@ -1415,10 +1447,10 @@ ZEND_API zval *zend_std_get_static_property(zend_class_entry *ce, zend_string *p
 	/* check if static properties were destroyed */
 	if (UNEXPECTED(CE_STATIC_MEMBERS(ce) == NULL)) {
 		if (ce->type == ZEND_INTERNAL_CLASS || (ce->ce_flags & ZEND_ACC_IMMUTABLE)) {
-			zend_intenal_class_init_statics(ce);
+			zend_class_init_statics(ce);
 		} else {
 undeclared_property:
-			if (!silent) {
+			if (type != BP_VAR_IS) {
 				zend_throw_error(NULL, "Access to undeclared static property: %s::$%s", ZSTR_VAL(ce->name), ZSTR_VAL(property_name));
 			}
 			return NULL;
@@ -1427,9 +1459,24 @@ undeclared_property:
 
 	ret = CE_STATIC_MEMBERS(ce) + property_info->offset;
 	ZVAL_DEINDIRECT(ret);
+
+	if (UNEXPECTED((type == BP_VAR_R || type == BP_VAR_RW)
+				&& Z_TYPE_P(ret) == IS_UNDEF && property_info->type != 0)) {
+		zend_throw_error(NULL, "Typed static property %s::$%s must not be accessed before initialization",
+			ZSTR_VAL(property_info->ce->name),
+			zend_get_unmangled_property_name(property_name));
+		return NULL;
+	}
+
 	return ret;
 }
 /* }}} */
+
+ZEND_API zval *zend_std_get_static_property(zend_class_entry *ce, zend_string *property_name, int type) /* {{{ */
+{
+	zend_property_info *prop_info;
+	return zend_std_get_static_property_with_info(ce, property_name, type, &prop_info);
+}
 
 ZEND_API ZEND_COLD zend_bool zend_std_unset_static_property(zend_class_entry *ce, zend_string *property_name) /* {{{ */
 {
@@ -1550,18 +1597,15 @@ ZEND_API int zend_std_compare_objects(zval *o1, zval *o2) /* {{{ */
 }
 /* }}} */
 
-ZEND_API int zend_std_has_property(zval *object, zval *member, int has_set_exists, void **cache_slot) /* {{{ */
+ZEND_API int zend_std_has_property(zend_object *zobj, zend_string *name, int has_set_exists, void **cache_slot) /* {{{ */
 {
-	zend_object *zobj;
 	int result;
 	zval *value = NULL;
-	zend_string *name, *tmp_name;
 	uintptr_t property_offset;
+	zend_property_info *prop_info = NULL;
+	zend_string *tmp_name = NULL;
 
-	zobj = Z_OBJ_P(object);
-	name = zval_get_tmp_string(member, &tmp_name);
-
-	property_offset = zend_get_property_offset(zobj->ce, name, 1, cache_slot);
+	property_offset = zend_get_property_offset(zobj->ce, name, 1, cache_slot, &prop_info);
 
 	if (EXPECTED(IS_VALID_PROPERTY_OFFSET(property_offset))) {
 		value = OBJ_PROP(zobj, property_offset);
@@ -1656,14 +1700,14 @@ ZEND_API zend_string *zend_std_get_class_name(const zend_object *zobj) /* {{{ */
 }
 /* }}} */
 
-ZEND_API int zend_std_cast_object_tostring(zval *readobj, zval *writeobj, int type) /* {{{ */
+ZEND_API int zend_std_cast_object_tostring(zend_object *readobj, zval *writeobj, int type) /* {{{ */
 {
 	zval retval;
 	zend_class_entry *ce;
 
 	switch (type) {
 		case IS_STRING:
-			ce = Z_OBJCE_P(readobj);
+			ce = readobj->ce;
 			if (ce->__tostring &&
 				(zend_call_method_with_0_params(readobj, ce, &ce->__tostring, "__tostring", &retval) || EG(exception))) {
 				if (UNEXPECTED(EG(exception) != NULL)) {
@@ -1696,17 +1740,17 @@ ZEND_API int zend_std_cast_object_tostring(zval *readobj, zval *writeobj, int ty
 			ZVAL_TRUE(writeobj);
 			return SUCCESS;
 		case IS_LONG:
-			ce = Z_OBJCE_P(readobj);
+			ce = readobj->ce;
 			zend_error(E_NOTICE, "Object of class %s could not be converted to int", ZSTR_VAL(ce->name));
 			ZVAL_LONG(writeobj, 1);
 			return SUCCESS;
 		case IS_DOUBLE:
-			ce = Z_OBJCE_P(readobj);
+			ce = readobj->ce;
 			zend_error(E_NOTICE, "Object of class %s could not be converted to float", ZSTR_VAL(ce->name));
 			ZVAL_DOUBLE(writeobj, 1);
 			return SUCCESS;
 		case _IS_NUMBER:
-			ce = Z_OBJCE_P(readobj);
+			ce = readobj->ce;
 			zend_error(E_NOTICE, "Object of class %s could not be converted to number", ZSTR_VAL(ce->name));
 			ZVAL_LONG(writeobj, 1);
 			return SUCCESS;
@@ -1718,10 +1762,10 @@ ZEND_API int zend_std_cast_object_tostring(zval *readobj, zval *writeobj, int ty
 }
 /* }}} */
 
-ZEND_API int zend_std_get_closure(zval *obj, zend_class_entry **ce_ptr, zend_function **fptr_ptr, zend_object **obj_ptr) /* {{{ */
+ZEND_API int zend_std_get_closure(zend_object *obj, zend_class_entry **ce_ptr, zend_function **fptr_ptr, zend_object **obj_ptr) /* {{{ */
 {
 	zval *func;
-	zend_class_entry *ce = Z_OBJCE_P(obj);
+	zend_class_entry *ce = obj->ce;
 
 	if ((func = zend_hash_find_ex(&ce->function_table, ZSTR_KNOWN(ZEND_STR_MAGIC_INVOKE), 1)) == NULL) {
 		return FAILURE;
@@ -1735,20 +1779,20 @@ ZEND_API int zend_std_get_closure(zval *obj, zend_class_entry **ce_ptr, zend_fun
 		}
 	} else {
 		if (obj_ptr) {
-			*obj_ptr = Z_OBJ_P(obj);
+			*obj_ptr = obj;
 		}
 	}
 	return SUCCESS;
 }
 /* }}} */
 
-ZEND_API HashTable *zend_std_get_properties_for(zval *obj, zend_prop_purpose purpose) {
+ZEND_API HashTable *zend_std_get_properties_for(zend_object *obj, zend_prop_purpose purpose) {
 	HashTable *ht;
 	switch (purpose) {
 		case ZEND_PROP_PURPOSE_DEBUG:
-			if (Z_OBJ_HT_P(obj)->get_debug_info) {
+			if (obj->handlers->get_debug_info) {
 				int is_temp;
-				ht = Z_OBJ_HT_P(obj)->get_debug_info(obj, &is_temp);
+				ht = obj->handlers->get_debug_info(obj, &is_temp);
 				if (ht && !is_temp && !(GC_FLAGS(ht) & GC_IMMUTABLE)) {
 					GC_ADDREF(ht);
 				}
@@ -1760,7 +1804,7 @@ ZEND_API HashTable *zend_std_get_properties_for(zval *obj, zend_prop_purpose pur
 		case ZEND_PROP_PURPOSE_VAR_EXPORT:
 		case ZEND_PROP_PURPOSE_JSON:
 		case _ZEND_PROP_PURPOSE_ARRAY_KEY_EXISTS:
-			ht = Z_OBJ_HT_P(obj)->get_properties(obj);
+			ht = obj->handlers->get_properties(obj);
 			if (ht && !(GC_FLAGS(ht) & GC_IMMUTABLE)) {
 				GC_ADDREF(ht);
 			}
@@ -1772,11 +1816,13 @@ ZEND_API HashTable *zend_std_get_properties_for(zval *obj, zend_prop_purpose pur
 }
 
 ZEND_API HashTable *zend_get_properties_for(zval *obj, zend_prop_purpose purpose) {
-	if (Z_OBJ_HT_P(obj)->get_properties_for) {
-		return Z_OBJ_HT_P(obj)->get_properties_for(obj, purpose);
+	zend_object *zobj = Z_OBJ_P(obj);
+
+	if (zobj->handlers->get_properties_for) {
+		return zobj->handlers->get_properties_for(zobj, purpose);
 	}
 
-	return zend_std_get_properties_for(obj, purpose);
+	return zend_std_get_properties_for(zobj, purpose);
 }
 
 ZEND_API const zend_object_handlers std_object_handlers = {
@@ -1799,7 +1845,6 @@ ZEND_API const zend_object_handlers std_object_handlers = {
 	zend_std_unset_dimension,				/* unset_dimension */
 	zend_std_get_properties,				/* get_properties */
 	zend_std_get_method,					/* get_method */
-	NULL,									/* call_method */
 	zend_std_get_constructor,				/* get_constructor */
 	zend_std_get_class_name,				/* get_class_name */
 	zend_std_compare_objects,				/* compare_objects */
@@ -1812,13 +1857,3 @@ ZEND_API const zend_object_handlers std_object_handlers = {
 	NULL,									/* compare */
 	NULL,									/* get_properties_for */
 };
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

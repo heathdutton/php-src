@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -514,6 +514,8 @@ PHPAPI int php_network_parse_network_address_with_port(const char *addr, zend_lo
 #if HAVE_IPV6
 	struct sockaddr_in6 *in6 = (struct sockaddr_in6*)sa;
 #endif
+
+	memset(sa, 0, sizeof(struct sockaddr));
 
 	if (*addr == '[') {
 		colon = memchr(addr + 1, ']', addrlen-1);
@@ -1319,12 +1321,3 @@ PHPAPI struct hostent*	php_network_gethostbyname(char *name) {
 	return gethostname_re(name, &FG(tmp_host_info), &FG(tmp_host_buf), &FG(tmp_host_buf_len));
 #endif
 }
-
-/*
- * Local variables:
- * tab-width: 8
- * c-basic-offset: 8
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

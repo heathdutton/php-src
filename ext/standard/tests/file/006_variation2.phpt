@@ -6,7 +6,7 @@ if (substr(PHP_OS, 0, 3) == 'WIN') {
     die('skip Not on Windows');
 }
 // Skip if being run by root
-$filename = dirname(__FILE__)."/006_root_check.tmp";
+$filename = __DIR__."/006_root_check.tmp";
 $fp = fopen($filename, 'w');
 fclose($fp);
 if(fileowner($filename) == 0) {
@@ -32,10 +32,10 @@ unlink($filename);
 
 echo "*** Testing fileperms() & chmod() : usage variations ***\n";
 
-$file_name = dirname(__FILE__)."/006_variation2.tmp";
+$file_name = __DIR__."/006_variation2.tmp";
 $file_handle = fopen($file_name, "w");
 fclose($file_handle);
-$dir_name = dirname(__FILE__)."/006_variation2";
+$dir_name = __DIR__."/006_variation2";
 mkdir($dir_name);
 
 echo "\n*** Testing fileperms(), chmod() with miscellaneous permissions ***\n";
@@ -68,25 +68,33 @@ $perms_array = array(
 $count = 1;
 foreach($perms_array as $permission) {
   echo "-- Iteration $count --\n";
-  var_dump( chmod($file_name, $permission) );
-  printf("%o", fileperms($file_name) );
-  echo "\n";
-  clearstatcache();
+  try {
+    var_dump( chmod($file_name, $permission) );
+    printf("%o", fileperms($file_name) );
+    echo "\n";
+    clearstatcache();
+  } catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+  }
 
-  var_dump( chmod($dir_name, $permission) );
-  printf("%o", fileperms($dir_name) );
-  echo "\n";
-  clearstatcache();
+  try {
+    var_dump( chmod($dir_name, $permission) );
+    printf("%o", fileperms($dir_name) );
+    echo "\n";
+    clearstatcache();
+  } catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+  }
   $count++;
 }
 echo "*** Done ***\n";
 ?>
 --CLEAN--
 <?php
-chmod(dirname(__FILE__)."/006_variation2.tmp", 0777);
-chmod(dirname(__FILE__)."/006_variation2", 0777);
-unlink(dirname(__FILE__)."/006_variation2.tmp");
-rmdir(dirname(__FILE__)."/006_variation2");
+chmod(__DIR__."/006_variation2.tmp", 0777);
+chmod(__DIR__."/006_variation2", 0777);
+unlink(__DIR__."/006_variation2.tmp");
+rmdir(__DIR__."/006_variation2");
 ?>
 --EXPECTF--
 *** Testing fileperms() & chmod() : usage variations ***
@@ -148,39 +156,15 @@ bool(true)
 bool(true)
 43567
 -- Iteration 12 --
-
-Warning: chmod() expects parameter 2 to be int, string given in %s on line %d
-NULL
-103567
-
-Warning: chmod() expects parameter 2 to be int, string given in %s on line %d
-NULL
-43567
+chmod() expects parameter 2 to be int, string given
+chmod() expects parameter 2 to be int, string given
 -- Iteration 13 --
-
-Warning: chmod() expects parameter 2 to be int, string given in %s on line %d
-NULL
-103567
-
-Warning: chmod() expects parameter 2 to be int, string given in %s on line %d
-NULL
-43567
+chmod() expects parameter 2 to be int, string given
+chmod() expects parameter 2 to be int, string given
 -- Iteration 14 --
-
-Warning: chmod() expects parameter 2 to be int, string given in %s on line %d
-NULL
-103567
-
-Warning: chmod() expects parameter 2 to be int, string given in %s on line %d
-NULL
-43567
+chmod() expects parameter 2 to be int, string given
+chmod() expects parameter 2 to be int, string given
 -- Iteration 15 --
-
-Warning: chmod() expects parameter 2 to be int, string given in %s on line %d
-NULL
-103567
-
-Warning: chmod() expects parameter 2 to be int, string given in %s on line %d
-NULL
-43567
+chmod() expects parameter 2 to be int, string given
+chmod() expects parameter 2 to be int, string given
 *** Done ***

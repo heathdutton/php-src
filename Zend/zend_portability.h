@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -60,9 +60,7 @@
 # include <dlfcn.h>
 #endif
 
-#ifdef HAVE_LIMITS_H
-# include <limits.h>
-#endif
+#include <limits.h>
 
 #if HAVE_ALLOCA_H && !defined(_ALLOCA_H)
 # include <alloca.h>
@@ -139,12 +137,18 @@
 #  define RTLD_GLOBAL 0
 # endif
 
-# if defined(RTLD_GROUP) && defined(RTLD_WORLD) && defined(RTLD_PARENT)
-#  define DL_LOAD(libname)			dlopen(libname, RTLD_LAZY | RTLD_GLOBAL | RTLD_GROUP | RTLD_WORLD | RTLD_PARENT)
-# elif defined(RTLD_DEEPBIND) && !defined(__SANITIZE_ADDRESS__)
-#  define DL_LOAD(libname)			dlopen(libname, RTLD_LAZY | RTLD_GLOBAL | RTLD_DEEPBIND)
+# ifdef PHP_USE_RTLD_NOW
+#  define PHP_RTLD_MODE  RTLD_NOW
 # else
-#  define DL_LOAD(libname)			dlopen(libname, RTLD_LAZY | RTLD_GLOBAL)
+#  define PHP_RTLD_MODE  RTLD_LAZY
+# endif
+
+# if defined(RTLD_GROUP) && defined(RTLD_WORLD) && defined(RTLD_PARENT)
+#  define DL_LOAD(libname)			dlopen(libname, PHP_RTLD_MODE | RTLD_GLOBAL | RTLD_GROUP | RTLD_WORLD | RTLD_PARENT)
+# elif defined(RTLD_DEEPBIND) && !defined(__SANITIZE_ADDRESS__)
+#  define DL_LOAD(libname)			dlopen(libname, PHP_RTLD_MODE | RTLD_GLOBAL | RTLD_DEEPBIND)
+# else
+#  define DL_LOAD(libname)			dlopen(libname, PHP_RTLD_MODE | RTLD_GLOBAL)
 # endif
 # define DL_UNLOAD					dlclose
 # if defined(DLSYM_NEEDS_UNDERSCORE)
@@ -250,14 +254,6 @@ char *alloca();
 # define ZEND_FASTCALL __vectorcall
 #else
 # define ZEND_FASTCALL
-#endif
-
-#ifndef restrict
-# if defined(__GNUC__) && ZEND_GCC_VERSION >= 3004
-# else
-#  define __restrict__
-# endif
-# define restrict __restrict__
 #endif
 
 #if (defined(__GNUC__) && __GNUC__ >= 3 && !defined(__INTEL_COMPILER) && !defined(DARWIN) && !defined(__hpux) && !defined(_AIX) && !defined(__osf__)) || __has_attribute(noreturn)
@@ -438,12 +434,8 @@ char *alloca();
 #define MAX(a, b)  (((a)>(b))?(a):(b))
 #define MIN(a, b)  (((a)<(b))?(a):(b))
 
-/* x86 instructions BT, SHL, SHR don't require masking */
-#if defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__)) || defined(ZEND_WIN32)
-# define ZEND_BIT_TEST(bits, bit) (((bits)[(bit) / (sizeof((bits)[0])*8)] >> (bit)) & 1)
-#else
-# define ZEND_BIT_TEST(bits, bit) (((bits)[(bit) / (sizeof((bits)[0])*8)] >> ((bit) & (sizeof((bits)[0])*8-1))) & 1)
-#endif
+#define ZEND_BIT_TEST(bits, bit) \
+	(((bits)[(bit) / (sizeof((bits)[0])*8)] >> ((bit) & (sizeof((bits)[0])*8-1))) & 1)
 
 /* We always define a function, even if there's a macro or expression we could
  * alias, so that using it in contexts where we can't make function calls
@@ -559,6 +551,7 @@ static zend_always_inline double _zend_get_nan(void) /* {{{ */
 # define ZEND_INTRIN_SSSE3_RESOLVER 1
 #endif
 
+/* Do not use for conditional declaration of API functions! */
 #if ZEND_INTRIN_SSSE3_RESOLVER && ZEND_INTRIN_HAVE_IFUNC_TARGET
 # define ZEND_INTRIN_SSSE3_FUNC_PROTO 1
 #elif ZEND_INTRIN_SSSE3_RESOLVER
@@ -583,6 +576,7 @@ static zend_always_inline double _zend_get_nan(void) /* {{{ */
 # define ZEND_INTRIN_SSE4_2_RESOLVER 1
 #endif
 
+/* Do not use for conditional declaration of API functions! */
 #if ZEND_INTRIN_SSE4_2_RESOLVER && ZEND_INTRIN_HAVE_IFUNC_TARGET
 # define ZEND_INTRIN_SSE4_2_FUNC_PROTO 1
 #elif ZEND_INTRIN_SSE4_2_RESOLVER
@@ -605,6 +599,7 @@ static zend_always_inline double _zend_get_nan(void) /* {{{ */
 # define ZEND_INTRIN_AVX2_RESOLVER 1
 #endif
 
+/* Do not use for conditional declaration of API functions! */
 #if ZEND_INTRIN_AVX2_RESOLVER && ZEND_INTRIN_HAVE_IFUNC_TARGET
 # define ZEND_INTRIN_AVX2_FUNC_PROTO 1
 #elif ZEND_INTRIN_AVX2_RESOLVER
@@ -642,13 +637,3 @@ static zend_always_inline double _zend_get_nan(void) /* {{{ */
 #endif
 
 #endif /* ZEND_PORTABILITY_H */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

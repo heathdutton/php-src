@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -365,7 +365,7 @@ static void spl_dllist_object_free_storage(zend_object *object) /* {{{ */
 
 zend_object_iterator *spl_dllist_get_iterator(zend_class_entry *ce, zval *object, int by_ref);
 
-static zend_object *spl_dllist_object_new_ex(zend_class_entry *class_type, zval *orig, int clone_orig) /* {{{ */
+static zend_object *spl_dllist_object_new_ex(zend_class_entry *class_type, zend_object *orig, int clone_orig) /* {{{ */
 {
 	spl_dllist_object *intern;
 	zend_class_entry  *parent = class_type;
@@ -380,7 +380,7 @@ static zend_object *spl_dllist_object_new_ex(zend_class_entry *class_type, zval 
 	intern->traverse_position = 0;
 
 	if (orig) {
-		spl_dllist_object *other = Z_SPLDLLIST_P(orig);
+		spl_dllist_object *other = spl_dllist_from_obj(orig);
 		intern->ce_get_iterator = other->ce_get_iterator;
 
 		if (clone_orig) {
@@ -455,13 +455,9 @@ static zend_object *spl_dllist_object_new(zend_class_entry *class_type) /* {{{ *
 }
 /* }}} */
 
-static zend_object *spl_dllist_object_clone(zval *zobject) /* {{{ */
+static zend_object *spl_dllist_object_clone(zend_object *old_object) /* {{{ */
 {
-	zend_object        *old_object;
-	zend_object        *new_object;
-
-	old_object  = Z_OBJ_P(zobject);
-	new_object = spl_dllist_object_new_ex(old_object->ce, zobject, 1);
+	zend_object *new_object = spl_dllist_object_new_ex(old_object->ce, old_object, 1);
 
 	zend_objects_clone_members(new_object, old_object);
 
@@ -469,9 +465,9 @@ static zend_object *spl_dllist_object_clone(zval *zobject) /* {{{ */
 }
 /* }}} */
 
-static int spl_dllist_object_count_elements(zval *object, zend_long *count) /* {{{ */
+static int spl_dllist_object_count_elements(zend_object *object, zend_long *count) /* {{{ */
 {
-	spl_dllist_object *intern = Z_SPLDLLIST_P(object);
+	spl_dllist_object *intern = spl_dllist_from_obj(object);
 
 	if (intern->fptr_count) {
 		zval rv;
@@ -490,9 +486,9 @@ static int spl_dllist_object_count_elements(zval *object, zend_long *count) /* {
 }
 /* }}} */
 
-static HashTable* spl_dllist_object_get_debug_info(zval *obj, int *is_temp) /* {{{{ */
+static HashTable* spl_dllist_object_get_debug_info(zend_object *obj, int *is_temp) /* {{{{ */
 {
-	spl_dllist_object     *intern  = Z_SPLDLLIST_P(obj);
+	spl_dllist_object     *intern  = spl_dllist_from_obj(obj);
 	spl_ptr_llist_element *current = intern->llist->head, *next;
 	zval tmp, dllist_array;
 	zend_string *pnstr;
@@ -534,9 +530,9 @@ static HashTable* spl_dllist_object_get_debug_info(zval *obj, int *is_temp) /* {
 }
 /* }}}} */
 
-static HashTable *spl_dllist_object_get_gc(zval *obj, zval **gc_data, int *gc_data_count) /* {{{ */
+static HashTable *spl_dllist_object_get_gc(zend_object *obj, zval **gc_data, int *gc_data_count) /* {{{ */
 {
-	spl_dllist_object *intern  = Z_SPLDLLIST_P(obj);
+	spl_dllist_object *intern = spl_dllist_from_obj(obj);
 	spl_ptr_llist_element *current = intern->llist->head;
 	int i = 0;
 
@@ -704,7 +700,7 @@ SPL_METHOD(SplDoublyLinkedList, isEmpty)
 		return;
 	}
 
-	spl_dllist_object_count_elements(ZEND_THIS, &count);
+	spl_dllist_object_count_elements(Z_OBJ_P(ZEND_THIS), &count);
 	RETURN_BOOL(count == 0);
 }
 /* }}} */
@@ -1220,6 +1216,67 @@ error:
 
 } /* }}} */
 
+/* {{{ proto array SplDoublyLinkedList::__serialize() */
+SPL_METHOD(SplDoublyLinkedList, __serialize)
+{
+	spl_dllist_object *intern = Z_SPLDLLIST_P(ZEND_THIS);
+	spl_ptr_llist_element *current = intern->llist->head;
+	zval tmp;
+
+	if (zend_parse_parameters_none_throw() == FAILURE) {
+		return;
+	}
+
+	array_init(return_value);
+
+	/* flags */
+	ZVAL_LONG(&tmp, intern->flags);
+	zend_hash_next_index_insert(Z_ARRVAL_P(return_value), &tmp);
+
+	/* elements */
+	array_init_size(&tmp, intern->llist->count);
+	while (current) {
+		zend_hash_next_index_insert(Z_ARRVAL(tmp), &current->data);
+		current = current->next;
+	}
+	zend_hash_next_index_insert(Z_ARRVAL_P(return_value), &tmp);
+
+	/* members */
+	ZVAL_ARR(&tmp, zend_std_get_properties(&intern->std));
+	Z_TRY_ADDREF(tmp);
+	zend_hash_next_index_insert(Z_ARRVAL_P(return_value), &tmp);
+} /* }}} */
+
+/* {{{ proto void SplDoublyLinkedList::__unserialize(array serialized) */
+SPL_METHOD(SplDoublyLinkedList, __unserialize) {
+	spl_dllist_object *intern = Z_SPLDLLIST_P(ZEND_THIS);
+	HashTable *data;
+	zval *flags_zv, *storage_zv, *members_zv, *elem;
+
+	if (zend_parse_parameters_throw(ZEND_NUM_ARGS(), "h", &data) == FAILURE) {
+		return;
+	}
+
+	flags_zv = zend_hash_index_find(data, 0);
+	storage_zv = zend_hash_index_find(data, 1);
+	members_zv = zend_hash_index_find(data, 2);
+	if (!flags_zv || !storage_zv || !members_zv ||
+			Z_TYPE_P(flags_zv) != IS_LONG || Z_TYPE_P(storage_zv) != IS_ARRAY ||
+			Z_TYPE_P(members_zv) != IS_ARRAY) {
+		zend_throw_exception(spl_ce_UnexpectedValueException,
+			"Incomplete or ill-typed serialization data", 0);
+		return;
+	}
+
+	intern->flags = (int) Z_LVAL_P(flags_zv);
+
+	ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(storage_zv), elem) {
+		spl_ptr_llist_push(intern->llist, elem);
+	} ZEND_HASH_FOREACH_END();
+
+	object_properties_load(&intern->std, Z_ARRVAL_P(members_zv));
+} /* }}} */
+
 /* {{{ proto void SplDoublyLinkedList::add(mixed index, mixed newval)
  Inserts a new entry before the specified $index consisting of $newval. */
 SPL_METHOD(SplDoublyLinkedList, add)
@@ -1374,6 +1431,8 @@ static const zend_function_entry spl_funcs_SplDoublyLinkedList[] = {
 	/* Serializable */
 	SPL_ME(SplDoublyLinkedList,  unserialize,    arginfo_dllist_serialized,      ZEND_ACC_PUBLIC)
 	SPL_ME(SplDoublyLinkedList,  serialize,      arginfo_dllist_void,            ZEND_ACC_PUBLIC)
+	SPL_ME(SplDoublyLinkedList,  __unserialize,    arginfo_dllist_serialized,    ZEND_ACC_PUBLIC)
+	SPL_ME(SplDoublyLinkedList,  __serialize,      arginfo_dllist_void,          ZEND_ACC_PUBLIC)
 	PHP_FE_END
 };
 /* }}} */
@@ -1412,12 +1471,3 @@ PHP_MINIT_FUNCTION(spl_dllist) /* {{{ */
 	return SUCCESS;
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: fdm=marker
- * vim: noet sw=4 ts=4
- */

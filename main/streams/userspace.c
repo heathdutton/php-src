@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -287,7 +287,10 @@ static void user_stream_create_object(struct php_user_stream_wrapper *uwrap, php
 	}
 
 	/* create an instance of our class */
-	object_init_ex(object, uwrap->ce);
+	if (object_init_ex(object, uwrap->ce) == FAILURE) {
+		ZVAL_UNDEF(object);
+		return;
+	}
 
 	if (context) {
 		add_property_resource(object, "context", context->res);

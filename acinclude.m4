@@ -160,7 +160,7 @@ EOF
     eval echo "$i = \$$i" >> Makefile
   done
 
-  cat $abs_srcdir/Makefile.global Makefile.fragments Makefile.objects >> Makefile
+  cat $abs_srcdir/build/Makefile.global Makefile.fragments Makefile.objects >> Makefile
 ])
 
 dnl
@@ -270,25 +270,6 @@ EOF
 dnl -------------------------------------------------------------------------
 dnl Compiler characteristics checks
 dnl -------------------------------------------------------------------------
-
-dnl
-dnl PHP_TARGET_RDYNAMIC
-dnl
-dnl Checks whether -rdynamic is supported by the compiler.  This
-dnl is necessary for some targets to populate the global symbol
-dnl table.  Otherwise, dynamic modules would not be able to resolve
-dnl PHP-related symbols.
-dnl
-dnl If successful, adds -rdynamic to PHP_LDFLAGS.
-dnl
-AC_DEFUN([PHP_TARGET_RDYNAMIC],[
-  if test -n "$GCC"; then
-    PHP_CHECK_GCC_ARG(-rdynamic, gcc_rdynamic=yes)
-    if test "$gcc_rdynamic" = "yes"; then
-      PHP_LDFLAGS="$PHP_LDFLAGS -rdynamic"
-    fi
-  fi
-])
 
 dnl
 dnl PHP_RUNPATH_SWITCH
@@ -746,7 +727,7 @@ dnl
 dnl PHP_BUILD_THREAD_SAFE
 dnl
 AC_DEFUN([PHP_BUILD_THREAD_SAFE],[
-  enable_maintainer_zts=yes
+  enable_zts=yes
   if test "$pthreads_working" != "yes"; then
     AC_MSG_ERROR([ZTS currently requires working POSIX threads. We were unable to verify that your system supports Pthreads.])
   fi
@@ -833,15 +814,11 @@ dnl from object_var in build-dir.
 dnl
 AC_DEFUN([PHP_SHARED_MODULE],[
   install_modules="install-modules"
+  suffix=la
 
   case $host_alias in
     *aix*[)]
-      suffix=so
-      link_cmd='$(LIBTOOL) --mode=link ifelse($4,,[$(CC)],[$(CXX)]) $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS) $(LDFLAGS) -Wl,-G -o '$3'/$1.la -export-dynamic -avoid-version -prefer-pic -module -rpath $(phplibdir) $(EXTRA_LDFLAGS) $($2) $(translit($1,a-z_-,A-Z__)_SHARED_LIBADD) && mv -f '$3'/.libs/$1.so '$3'/$1.so'
-      ;;
-    *[)]
-      suffix=la
-      link_cmd='$(LIBTOOL) --mode=link ifelse($4,,[$(CC)],[$(CXX)]) $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS) $(LDFLAGS) -o [$]@ -export-dynamic -avoid-version -prefer-pic -module -rpath $(phplibdir) $(EXTRA_LDFLAGS) $($2) $(translit($1,a-z_-,A-Z__)_SHARED_LIBADD)'
+      additional_flags="-Wl,-G"
       ;;
   esac
 
@@ -856,7 +833,7 @@ AC_DEFUN([PHP_SHARED_MODULE],[
 	\$(LIBTOOL) --mode=install cp $3/$1.$suffix \$(phplibdir)
 
 $3/$1.$suffix: \$($2) \$(translit($1,a-z_-,A-Z__)_SHARED_DEPENDENCIES)
-	$link_cmd
+	\$(LIBTOOL) --mode=link ifelse($4,,[\$(CC)],[\$(CXX)]) \$(COMMON_FLAGS) \$(CFLAGS_CLEAN) \$(EXTRA_CFLAGS) \$(LDFLAGS) $additional_flags -o [\$]@ -export-dynamic -avoid-version -prefer-pic -module -rpath \$(phplibdir) \$(EXTRA_LDFLAGS) \$($2) \$(translit($1,a-z_-,A-Z__)_SHARED_LIBADD)
 
 EOF
 ])
@@ -903,17 +880,6 @@ AC_DEFUN([PHP_SELECT_SAPI],[
     install_sapi="install-sapi"
     ifelse($3,,,[PHP_ADD_SOURCES([sapi/$1],[$3],[$4],[sapi])])
   ])
-])
-
-dnl deprecated
-AC_DEFUN([PHP_EXTENSION],[
-  sources=`$AWK -f $abs_srcdir/build/scan_makefile_in.awk < []PHP_EXT_SRCDIR($1)[]/Makefile.in`
-
-  PHP_NEW_EXTENSION($1, $sources, $2, $3)
-
-  if test -r "$ext_srcdir/Makefile.frag"; then
-    PHP_ADD_MAKEFILE_FRAGMENT
-  fi
 ])
 
 AC_DEFUN([PHP_ADD_BUILD_DIR],[
@@ -972,7 +938,7 @@ dnl ---------------------------------------------- Shared module
 dnl ---------------------------------------------- CLI static module
     [PHP_]translit($1,a-z_-,A-Z__)[_SHARED]=no
     case "$PHP_SAPI" in
-      cgi|embed[)]
+      cgi|embed|phpdbg[)]
         PHP_ADD_SOURCES($ext_dir,$2,$ac_extra,)
         EXT_STATIC="$EXT_STATIC $1;$ext_dir"
         ;;
@@ -1044,12 +1010,6 @@ dnl -------------------------------------------------------------------------
 
 dnl Internal helper macros
 dnl
-dnl _PHP_DEF_HAVE_FILE(what, filename)
-AC_DEFUN([_PHP_DEF_HAVE_FILE], [
-  php_def_have_what=HAVE_[]`echo $1 | tr 'abcdefghijklmnopqrstuvwxyz-' 'ABCDEFGHIJKLMNOPQRSTUVWXYZ_' `
-  echo "#define $php_def_have_what 1" >> $2
-])
-dnl
 dnl _PHP_CHECK_SIZEOF(type, cross-value, extra-headers [, found-action [, not-found-action]])
 dnl
 AC_DEFUN([_PHP_CHECK_SIZEOF], [
@@ -1060,10 +1020,8 @@ AC_DEFUN([_PHP_CHECK_SIZEOF], [
     old_LDFLAGS=$LDFLAGS
     LDFLAGS=
     AC_RUN_IFELSE([AC_LANG_SOURCE([[#include <stdio.h>
-#if STDC_HEADERS
 #include <stdlib.h>
 #include <stddef.h>
-#endif
 #ifdef HAVE_INTTYPES_H
 #include <inttypes.h>
 #endif
@@ -1108,21 +1066,6 @@ AC_DEFUN([PHP_CHECK_SIZEOF], [
 ])
 
 dnl
-dnl PHP_CHECK_TYPES(type-list, include-file [, extra-headers])
-dnl
-AC_DEFUN([PHP_CHECK_TYPES], [
-  for php_typename in $1; do
-    AC_MSG_CHECKING([whether $php_typename exists])
-    _PHP_CHECK_SIZEOF($php_typename, 0, $3, [
-      _PHP_DEF_HAVE_FILE($php_typename, $2)
-      AC_MSG_RESULT([yes])
-    ], [
-      AC_MSG_RESULT([no])
-    ])
-  done
-])
-
-dnl
 dnl PHP_CHECK_IN_ADDR_T
 dnl
 AC_DEFUN([PHP_CHECK_IN_ADDR_T], [
@@ -1133,10 +1076,8 @@ AC_CACHE_VAL(ac_cv_type_in_addr_t,
 changequote(<<,>>)dnl
 <<in_addr_t[^a-zA-Z_0-9]>>dnl
 changequote([,]), [#include <sys/types.h>
-#if STDC_HEADERS
 #include <stdlib.h>
 #include <stddef.h>
-#endif
 #ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
 #endif], ac_cv_type_in_addr_t=yes, ac_cv_type_in_addr_t=no)])dnl
@@ -1338,79 +1279,6 @@ AC_DEFUN([PHP_MISSING_TIME_R_DECL],[
 ])
 
 dnl
-dnl PHP_READDIR_R_TYPE
-dnl
-AC_DEFUN([PHP_READDIR_R_TYPE],[
-  dnl HAVE_READDIR_R is also defined by libmysql
-  AC_CHECK_FUNC(readdir_r,ac_cv_func_readdir_r=yes,ac_cv_func_readdir=no)
-  if test "$ac_cv_func_readdir_r" = "yes"; then
-  AC_CACHE_CHECK(for type of readdir_r, ac_cv_what_readdir_r,[
-    AC_RUN_IFELSE([AC_LANG_SOURCE([[
-#define _REENTRANT
-#include <sys/types.h>
-#include <dirent.h>
-
-#ifndef PATH_MAX
-#define PATH_MAX 1024
-#endif
-
-main() {
-  DIR *dir;
-  char entry[sizeof(struct dirent)+PATH_MAX];
-  struct dirent *pentry = (struct dirent *) &entry;
-
-  dir = opendir("/");
-  if (!dir)
-    exit(1);
-  if (readdir_r(dir, (struct dirent *) entry, &pentry) == 0) {
-    close(dir);
-    exit(0);
-  }
-  close(dir);
-  exit(1);
-}
-    ]])],[
-      ac_cv_what_readdir_r=POSIX
-    ],[
-      AC_PREPROC_IFELSE([
-        AC_LANG_SOURCE([[
-#define _REENTRANT
-#include <sys/types.h>
-#include <dirent.h>
-int readdir_r(DIR *, struct dirent *);
-        ]])],[
-          ac_cv_what_readdir_r=old-style
-        ],[
-          ac_cv_what_readdir_r=none
-      ])
-    ],[
-      ac_cv_what_readdir_r=none
-   ])
-  ])
-    case $ac_cv_what_readdir_r in
-    POSIX)
-      AC_DEFINE(HAVE_POSIX_READDIR_R,1,[whether you have POSIX readdir_r]);;
-    old-style)
-      AC_DEFINE(HAVE_OLD_READDIR_R,1,[whether you have old-style readdir_r]);;
-    esac
-  fi
-])
-
-dnl
-dnl PHP_TM_GMTOFF
-dnl
-AC_DEFUN([PHP_TM_GMTOFF],[
-AC_CACHE_CHECK([for tm_gmtoff in struct tm], ac_cv_struct_tm_gmtoff,
-[AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <sys/types.h>
-#include <time.h>]], [[struct tm tm; tm.tm_gmtoff;]])],
-  [ac_cv_struct_tm_gmtoff=yes], [ac_cv_struct_tm_gmtoff=no])])
-
-if test "$ac_cv_struct_tm_gmtoff" = yes; then
-  AC_DEFINE(HAVE_TM_GMTOFF,1,[whether you have tm_gmtoff in struct tm])
-fi
-])
-
-dnl
 dnl PHP_STRUCT_FLOCK
 dnl
 AC_DEFUN([PHP_STRUCT_FLOCK],[
@@ -1466,141 +1334,6 @@ AC_DEFUN([PHP_MISSING_FCLOSE_DECL],[
 ])
 
 dnl
-dnl PHP_AC_BROKEN_SPRINTF
-dnl
-dnl Check for broken sprintf(), C99 conformance
-dnl
-AC_DEFUN([PHP_AC_BROKEN_SPRINTF],[
-  AC_CACHE_CHECK(whether sprintf is broken, ac_cv_broken_sprintf,[
-    AC_RUN_IFELSE([AC_LANG_SOURCE([[main() {char buf[20];exit(sprintf(buf,"testing 123")!=11); }]])],[
-      ac_cv_broken_sprintf=no
-    ],[
-      ac_cv_broken_sprintf=yes
-    ],[
-      ac_cv_broken_sprintf=no
-    ])
-  ])
-  if test "$ac_cv_broken_sprintf" = "yes"; then
-    AC_DEFINE(PHP_BROKEN_SPRINTF, 1, [Whether sprintf is C99 conform])
-  else
-    AC_DEFINE(PHP_BROKEN_SPRINTF, 0, [Whether sprintf is C99 conform])
-  fi
-])
-
-dnl
-dnl PHP_AC_BROKEN_SNPRINTF
-dnl
-dnl Check for broken snprintf(), C99 conformance
-dnl
-AC_DEFUN([PHP_AC_BROKEN_SNPRINTF],[
-  AC_CACHE_CHECK(whether snprintf is broken, ac_cv_broken_snprintf,[
-    AC_RUN_IFELSE([AC_LANG_SOURCE([[
-#define NULL (0L)
-main() {
-  char buf[20];
-  int res = 0;
-  res = res || (snprintf(buf, 2, "marcus") != 6);
-  res = res || (buf[1] != '\0');
-  /* Implementations may consider this as an encoding error */
-  snprintf(buf, 0, "boerger");
-  /* However, they MUST ignore the pointer */
-  res = res || (buf[0] != 'm');
-  res = res || (snprintf(NULL, 0, "boerger") != 7);
-  res = res || (snprintf(buf, sizeof(buf), "%f", 0.12345678) != 8);
-  exit(res);
-}
-    ]])],[
-      ac_cv_broken_snprintf=no
-    ],[
-      ac_cv_broken_snprintf=yes
-    ],[
-      ac_cv_broken_snprintf=no
-    ])
-  ])
-  if test "$ac_cv_broken_snprintf" = "yes"; then
-    AC_DEFINE(PHP_BROKEN_SNPRINTF, 1, [Whether snprintf is C99 conform])
-  else
-    AC_DEFINE(PHP_BROKEN_SNPRINTF, 0, [Whether snprintf is C99 conform])
-  fi
-])
-
-dnl
-dnl PHP_SOLARIS_PIC_WEIRDNESS
-dnl
-dnl Solaris requires main code to be position independent in order
-dnl to let shared objects find symbols.  Weird.  Ugly.
-dnl
-dnl Must be run after all --with-NN options that let the user
-dnl choose dynamic extensions, and after the gcc test.
-dnl
-AC_DEFUN([PHP_SOLARIS_PIC_WEIRDNESS],[
-  AC_MSG_CHECKING([whether -fPIC is required])
-  if test -n "$EXT_SHARED"; then
-    os=`uname -sr 2>/dev/null`
-    case $os in
-      "SunOS 5.6"|"SunOS 5.7"[)]
-        case $CC in
-          gcc*|egcs*)
-            CFLAGS="$CFLAGS -fPIC";;
-          *[)]
-            CFLAGS="$CFLAGS -fpic";;
-        esac
-        AC_MSG_RESULT([yes]);;
-      *[)]
-        AC_MSG_RESULT([no]);;
-    esac
-  else
-    AC_MSG_RESULT([no])
-  fi
-])
-
-dnl
-dnl PHP_SYS_LFS
-dnl
-dnl The problem is that the default compilation flags in Solaris 2.6 won't
-dnl let programs access large files;  you need to tell the compiler that
-dnl you actually want your programs to work on large files.  For more
-dnl details about this brain damage please see:
-dnl http://www.sas.com/standards/large.file/x_open.20Mar96.html
-dnl
-dnl Written by Paul Eggert <eggert@twinsun.com>.
-dnl
-AC_DEFUN([PHP_SYS_LFS],
-[dnl
-  # If available, prefer support for large files unless the user specified
-  # one of the CPPFLAGS, LDFLAGS, or LIBS variables.
-  AC_MSG_CHECKING([whether large file support needs explicit enabling])
-  ac_getconfs=''
-  ac_result=yes
-  ac_set=''
-  ac_shellvars='CPPFLAGS LDFLAGS LIBS'
-  for ac_shellvar in $ac_shellvars; do
-    case $ac_shellvar in
-      CPPFLAGS[)] ac_lfsvar=LFS_CFLAGS ;;
-      *[)] ac_lfsvar=LFS_$ac_shellvar ;;
-    esac
-    eval test '"${'$ac_shellvar'+set}"' = set && ac_set=$ac_shellvar
-    (getconf $ac_lfsvar) >/dev/null 2>&1 || { ac_result=no; break; }
-    ac_getconf=`getconf $ac_lfsvar`
-    ac_getconfs=$ac_getconfs$ac_getconf
-    eval ac_test_$ac_shellvar=\$ac_getconf
-  done
-  case "$ac_result$ac_getconfs" in
-    yes[)] ac_result=no ;;
-  esac
-  case "$ac_result$ac_set" in
-    yes?*[)] ac_result="yes, but $ac_set is already set, so use its settings"
-  esac
-  AC_MSG_RESULT([$ac_result])
-  case $ac_result in
-    yes[)]
-      for ac_shellvar in $ac_shellvars; do
-        eval $ac_shellvar=\$ac_test_$ac_shellvar
-      done ;;
-  esac
-])
-
-dnl
 dnl PHP_SOCKADDR_CHECKS
 dnl
 AC_DEFUN([PHP_SOCKADDR_CHECKS], [
@@ -1622,29 +1355,6 @@ AC_DEFUN([PHP_SOCKADDR_CHECKS], [
   ])
   if test "$ac_cv_sockaddr_sa_len" = "yes"; then
     AC_DEFINE(HAVE_SOCKADDR_SA_LEN, 1, [Whether struct sockaddr has field sa_len])
-  fi
-])
-
-dnl
-dnl PHP_DECLARED_TIMEZONE
-dnl
-AC_DEFUN([PHP_DECLARED_TIMEZONE],[
-  AC_CACHE_CHECK(for declared timezone, ac_cv_declared_timezone,[
-    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
-#include <sys/types.h>
-#include <time.h>
-#ifdef HAVE_SYS_TIME_H
-#include <sys/time.h>
-#endif
-]],[[
-    time_t foo = (time_t) timezone;
-]])],[
-  ac_cv_declared_timezone=yes
-],[
-  ac_cv_declared_timezone=no
-])])
-  if test "$ac_cv_declared_timezone" = "yes"; then
-    AC_DEFINE(HAVE_DECLARED_TIMEZONE, 1, [Whether system headers declare timezone])
   fi
 ])
 
@@ -1977,25 +1687,6 @@ AC_DEFUN([PHP_SHLIB_SUFFIX_NAMES],[
 ])
 
 dnl
-dnl PHP_CHECK_64BIT([do if 32], [do if 64])
-dnl
-dnl This macro is used to detect if we're at 64-bit platform or not.
-dnl It could be useful for those external libs, that have different precompiled
-dnl versions in different directories.
-dnl
-AC_DEFUN([PHP_CHECK_64BIT],[
-  AC_CHECK_SIZEOF(long int, 4)
-  AC_MSG_CHECKING([checking if we're at 64-bit platform])
-  if test "$ac_cv_sizeof_long_int" = "4" ; then
-    AC_MSG_RESULT([no])
-    $1
-  else
-    AC_MSG_RESULT([yes])
-    $2
-  fi
-])
-
-dnl
 dnl PHP_C_BIGENDIAN
 dnl
 dnl Replacement macro for AC_C_BIGENDIAN
@@ -2068,44 +1759,126 @@ AC_DEFUN([PHP_PROG_AWK], [
 ])
 
 dnl
-dnl PHP_PROG_BISON
+dnl PHP_PROG_BISON([MIN-VERSION], [EXCLUDED-VERSION...])
 dnl
-dnl Search for bison and check it's version
+dnl Search for bison and optionally check if version is at least the minimum
+dnl required version MIN-VERSION and doesn't match any of the blank separated
+dnl list of excluded versions EXCLUDED-VERSION (for example "3.0 3.2").
 dnl
 AC_DEFUN([PHP_PROG_BISON], [
-  AC_PROG_YACC
-  LIBZEND_BISON_CHECK
+  AC_CHECK_PROG(YACC, bison, bison)
+
+  ifelse($1,,php_bison_required_version='',php_bison_required_version="$1")
+  ifelse($2,,php_bison_excluded_versions='none',php_bison_excluded_versions="$2")
+
+  if test -n "$YACC"; then
+    AC_MSG_CHECKING([for bison version])
+
+    php_bison_version=$($YACC --version 2> /dev/null | grep 'GNU Bison' | cut -d ' ' -f 4 | tr -d a-z)
+    ac_IFS=$IFS; IFS="."
+    set $php_bison_version
+    IFS=$ac_IFS
+    php_bison_num=`expr [$]{1:-0} \* 10000 + [$]{2:-0} \* 100 + [$]{3:-0}`
+    php_bison_branch="[$]1.[$]2"
+    php_bison_check=ok
+
+    if test -z "$php_bison_required_version" && test -z "$php_bison_num"; then
+      php_bison_check=invalid
+    elif test -n "$php_bison_required_version"; then
+      ac_IFS=$IFS; IFS="."
+      set $php_bison_required_version
+      IFS=$ac_IFS
+      php_bison_required_num=`expr [$]{1:-0} \* 10000 + [$]{2:-0} \* 100 + [$]{3:-0}`
+      php_bison_required_version="$php_bison_required_version or later"
+
+      if test -z "$php_bison_num" || test "$php_bison_num" -lt "$php_bison_required_num"; then
+        php_bison_check=invalid
+      fi
+    fi
+
+    for php_bison_check_version in $php_bison_excluded_versions; do
+      if test "$php_bison_version" = "$php_bison_check_version" || test "$php_bison_branch" = "$php_bison_check_version"; then
+        php_bison_check=invalid
+        break
+      fi
+    done
+
+    if test "$php_bison_check" != "invalid"; then
+      AC_MSG_RESULT([$php_bison_version (ok)])
+    else
+      AC_MSG_RESULT([$php_bison_version])
+    fi
+  fi
+
+  case $php_bison_check in
+    ""|invalid[)]
+      if test -f "$abs_srcdir/Zend/zend_language_parser.h" && test -f "$abs_srcdir/Zend/zend_language_parser.c"; then
+        AC_MSG_WARN([bison $php_bison_required_version is required if you want to regenerate PHP parsers (excluded versions: $php_bison_excluded_versions)])
+      else
+        AC_MSG_ERROR([bison $php_bison_required_version is required to generate PHP parsers (excluded versions: $php_bison_excluded_versions).])
+      fi
+
+      YACC="exit 0;"
+      ;;
+  esac
+
   PHP_SUBST(YACC)
 ])
 
 dnl
-dnl PHP_PROG_RE2C
+dnl PHP_PROG_RE2C([MIN-VERSION])
 dnl
-dnl Search for the re2c binary and check the version
+dnl Search for the re2c and optionally check if version is at least the minimum
+dnl required version MIN-VERSION.
 dnl
 AC_DEFUN([PHP_PROG_RE2C],[
   AC_CHECK_PROG(RE2C, re2c, re2c)
+
+  ifelse($1,,php_re2c_required_version='',php_re2c_required_version="$1")
+
   if test -n "$RE2C"; then
-    AC_CACHE_CHECK([for re2c version], php_cv_re2c_version, [
-      re2c_vernum=`$RE2C --vernum 2>/dev/null`
-      if test -z "$re2c_vernum" || test "$re2c_vernum" -lt "1304"; then
-        php_cv_re2c_version=invalid
-      else
-        php_cv_re2c_version="`$RE2C --version | cut -d ' ' -f 2  2>/dev/null` (ok)"
+    AC_MSG_CHECKING([for re2c version])
+
+    php_re2c_version=$($RE2C --version | cut -d ' ' -f 2 2>/dev/null)
+    ac_IFS=$IFS; IFS="."
+    set $php_re2c_version
+    IFS=$ac_IFS
+    php_re2c_num=`expr [$]{1:-0} \* 10000 + [$]{2:-0} \* 100 + [$]{3:-0}`
+    php_re2c_check=ok
+
+    if test -z "$php_re2c_required_version" && test -z "$php_re2c_num"; then
+      php_re2c_check=invalid
+    elif test -n "$php_re2c_required_version"; then
+      ac_IFS=$IFS; IFS="."
+      set $php_re2c_required_version
+      IFS=$ac_IFS
+      php_re2c_required_num=`expr [$]{1:-0} \* 10000 + [$]{2:-0} \* 100 + [$]{3:-0}`
+      php_re2c_required_version="$php_re2c_required_version or later"
+
+      if test -z "$php_re2c_num" || test "$php_re2c_num" -lt "$php_re2c_required_num"; then
+        php_re2c_check=invalid
       fi
-    ])
+    fi
+
+    if test "$php_re2c_check" != "invalid"; then
+      AC_MSG_RESULT([$php_re2c_version (ok)])
+    else
+      AC_MSG_RESULT([$php_re2c_version])
+    fi
   fi
-  case $php_cv_re2c_version in
+
+  case $php_re2c_check in
     ""|invalid[)]
       if test -f "$abs_srcdir/Zend/zend_language_scanner.c"; then
-        AC_MSG_WARN([You will need re2c 0.13.4 or later if you want to regenerate PHP lexers.])
+        AC_MSG_WARN([re2c $php_re2c_required_version is required if you want to regenerate PHP lexers.])
       else
-        AC_MSG_ERROR([You will need re2c 0.13.4 or later to generate PHP lexers.])
+        AC_MSG_ERROR([re2c $php_re2c_required_version is required to generate PHP lexers.])
       fi
 
       RE2C="exit 0;"
       ;;
   esac
+
   PHP_SUBST(RE2C)
 ])
 
@@ -2119,55 +1892,16 @@ dnl
 dnl Common setup macro for ICU
 dnl
 AC_DEFUN([PHP_SETUP_ICU],[
-  PHP_ARG_WITH(icu-dir,,
-  [  --with-icu-dir=DIR      Specify where ICU libraries and headers can be found], DEFAULT, no)
+  PKG_CHECK_MODULES([ICU], [icu-uc >= 50.1 icu-io icu-i18n])
 
-  if test "$PHP_ICU_DIR" = "no"; then
-    PHP_ICU_DIR=DEFAULT
-  fi
+  PHP_EVAL_INCLINE($ICU_CFLAGS)
+  PHP_EVAL_LIBLINE($ICU_LIBS, $1)
 
-  if test "$PHP_ICU_DIR" = "DEFAULT"; then
-    dnl Try to find icu-config
-    AC_PATH_PROG(ICU_CONFIG, icu-config, no, [$PATH:/usr/local/bin])
-  else
-    ICU_CONFIG="$PHP_ICU_DIR/bin/icu-config"
-  fi
+  ICU_CFLAGS="$ICU_CFLAGS -DU_NO_DEFAULT_INCLUDE_UTF_HEADERS=1"
+  ICU_CXXFLAGS="$ICU_CXXFLAGS -DUNISTR_FROM_CHAR_EXPLICIT=explicit -DUNISTR_FROM_STRING_EXPLICIT=explicit"
 
-  AC_MSG_CHECKING([for location of ICU headers and libraries])
-
-  dnl Trust icu-config to know better what the install prefix is..
-  icu_install_prefix=`$ICU_CONFIG --prefix 2> /dev/null`
-  if test "$?" != "0" || test -z "$icu_install_prefix"; then
-    AC_MSG_RESULT([not found])
-    AC_MSG_ERROR([Unable to detect ICU prefix or $ICU_CONFIG failed. Please verify ICU install prefix and make sure icu-config works.])
-  else
-    AC_MSG_RESULT([$icu_install_prefix])
-
-    dnl Check ICU version
-    AC_MSG_CHECKING([for ICU 50.1 or greater])
-    icu_version_full=`$ICU_CONFIG --version`
-    ac_IFS=$IFS
-    IFS="."
-    set $icu_version_full
-    IFS=$ac_IFS
-    icu_version=`expr [$]1 \* 1000 + [$]2`
-    AC_MSG_RESULT([found $icu_version_full])
-
-    if test "$icu_version" -lt "50001"; then
-      AC_MSG_ERROR([ICU version 50.1 or later is required])
-    fi
-
-    ICU_VERSION=$icu_version
-    ICU_INCS=`$ICU_CONFIG --cppflags-searchpath`
-    ICU_LIBS=`$ICU_CONFIG --ldflags --ldflags-icuio`
-    PHP_EVAL_INCLINE($ICU_INCS)
-    PHP_EVAL_LIBLINE($ICU_LIBS, $1)
-
-    ICU_CXXFLAGS="$ICU_CXXFLAGS -DUNISTR_FROM_CHAR_EXPLICIT=explicit -DUNISTR_FROM_STRING_EXPLICIT=explicit"
-    ICU_CFLAGS="-DU_NO_DEFAULT_INCLUDE_UTF_HEADERS=1"
-    if test "$icu_version" -ge "60000"; then
-      ICU_CFLAGS="$ICU_CFLAGS -DU_HIDE_OBSOLETE_UTF_OLD_H=1"
-    fi
+  if test "$PKG_CONFIG icu-io --atleast-version=60"; then
+    ICU_CFLAGS="$ICU_CFLAGS -DU_HIDE_OBSOLETE_UTF_OLD_H=1"
   fi
 ])
 
@@ -2236,115 +1970,18 @@ dnl Common setup macro for openssl
 dnl
 AC_DEFUN([PHP_SETUP_OPENSSL],[
   found_openssl=no
-  unset OPENSSL_INCDIR
-  unset OPENSSL_LIBDIR
 
   dnl Empty variable means 'no'
   test -z "$PHP_OPENSSL" && PHP_OPENSSL=no
   test -z "$PHP_IMAP_SSL" && PHP_IMAP_SSL=no
 
-  dnl Fallbacks for different configure options
   if test "$PHP_OPENSSL" != "no"; then
-    PHP_OPENSSL_DIR=$PHP_OPENSSL
-  elif test "$PHP_IMAP_SSL" != "no"; then
-    PHP_OPENSSL_DIR=$PHP_IMAP_SSL
-  fi
-
-  dnl First try to find pkg-config
-  if test -z "$PKG_CONFIG"; then
-    AC_PATH_PROG(PKG_CONFIG, pkg-config, no)
-  fi
-
-  dnl If pkg-config is found try using it
-  if test "$PHP_OPENSSL_DIR" = "yes" && test -x "$PKG_CONFIG" && $PKG_CONFIG --exists openssl; then
-    if $PKG_CONFIG --atleast-version=1.0.1 openssl; then
-      found_openssl=yes
-      OPENSSL_LIBS=`$PKG_CONFIG --libs openssl`
-      OPENSSL_INCS=`$PKG_CONFIG --cflags-only-I openssl`
-      OPENSSL_INCDIR=`$PKG_CONFIG --variable=includedir openssl`
-    else
-      AC_MSG_ERROR([OpenSSL version 1.0.1 or greater required.])
-    fi
-
-    if test -n "$OPENSSL_LIBS"; then
-      PHP_EVAL_LIBLINE($OPENSSL_LIBS, $1)
-    fi
-    if test -n "$OPENSSL_INCS"; then
-      PHP_EVAL_INCLINE($OPENSSL_INCS)
-    fi
-  fi
-
-  dnl If pkg-config fails for some reason, revert to the old method
-  if test "$found_openssl" = "no"; then
-
-    if test "$PHP_OPENSSL_DIR" = "yes"; then
-      PHP_OPENSSL_DIR="/usr/local/ssl /usr/local /usr /usr/local/openssl"
-    fi
-
-    for i in $PHP_OPENSSL_DIR; do
-      if test -r $i/include/openssl/evp.h; then
-        OPENSSL_INCDIR=$i/include
-      fi
-      if test -r $i/$PHP_LIBDIR/libssl.a -o -r $i/$PHP_LIBDIR/libssl.$SHLIB_SUFFIX_NAME; then
-        OPENSSL_LIBDIR=$i/$PHP_LIBDIR
-      fi
-      test -n "$OPENSSL_INCDIR" && test -n "$OPENSSL_LIBDIR" && break
-    done
-
-    if test -z "$OPENSSL_INCDIR"; then
-      AC_MSG_ERROR([Cannot find OpenSSL's <evp.h>])
-    fi
-
-    if test -z "$OPENSSL_LIBDIR"; then
-      AC_MSG_ERROR([Cannot find OpenSSL's libraries])
-    fi
-
-    old_CPPFLAGS=$CPPFLAGS
-    CPPFLAGS=-I$OPENSSL_INCDIR
-    AC_MSG_CHECKING([for OpenSSL version])
-    AC_EGREP_CPP(yes,[
-#include <openssl/opensslv.h>
-#if OPENSSL_VERSION_NUMBER >= 0x10001001L
-  yes
-#endif
-    ],[
-      AC_MSG_RESULT([>= 1.0.1])
-    ],[
-      AC_MSG_ERROR([OpenSSL version 1.0.1 or greater required.])
-    ])
-    CPPFLAGS=$old_CPPFLAGS
-
-    PHP_ADD_INCLUDE($OPENSSL_INCDIR)
-
-    PHP_CHECK_LIBRARY(crypto, CRYPTO_free, [
-      PHP_ADD_LIBRARY(crypto,,$1)
-    ],[
-      AC_MSG_ERROR([libcrypto not found!])
-    ],[
-      -L$OPENSSL_LIBDIR
-    ])
-
-    old_LIBS=$LIBS
-    LIBS="$LIBS -lcrypto"
-    PHP_CHECK_LIBRARY(ssl, SSL_CTX_set_ssl_version, [
-      found_openssl=yes
-    ],[
-      AC_MSG_ERROR([libssl not found!])
-    ],[
-      -L$OPENSSL_LIBDIR
-    ])
-    LIBS=$old_LIBS
-    PHP_ADD_LIBRARY(ssl,,$1)
-    PHP_ADD_LIBRARY(crypto,,$1)
-
-    PHP_ADD_LIBPATH($OPENSSL_LIBDIR, $1)
+    PKG_CHECK_MODULES([OPENSSL], [openssl >= 1.0.1], [found_openssl=yes])
   fi
 
   if test "$found_openssl" = "yes"; then
-  dnl For apache 1.3.x static build
-  OPENSSL_INCDIR_OPT=-I$OPENSSL_INCDIR
-  AC_SUBST(OPENSSL_INCDIR_OPT)
-
+    PHP_EVAL_LIBLINE($OPENSSL_LIBS, $1)
+    PHP_EVAL_INCLINE($OPENSSL_CFLAGS)
 ifelse([$2],[],:,[$2])
 ifelse([$3],[],,[else $3])
   fi
@@ -2693,7 +2330,7 @@ AC_DEFUN([PHP_CHECK_CONFIGURE_OPTIONS],[
       with-tsrm-pth | with-tsrm-st | with-tsrm-pthreads [)];;
 
       # Allow certain Zend options
-      with-zend-vm | enable-maintainer-zts | enable-inline-optimization[)];;
+      with-zend-vm | enable-zts | enable-inline-optimization[)];;
 
       # All the rest must be set using the PHP_ARG_* macros
       # PHP_ARG_* macros set php_enable_<arg_name> or php_with_<arg_name>
@@ -2968,10 +2605,11 @@ dnl
 dnl PHP_CHECK_STDINT_TYPES
 dnl
 AC_DEFUN([PHP_CHECK_STDINT_TYPES], [
-  AC_CHECK_SIZEOF([short], 2)
-  AC_CHECK_SIZEOF([int], 4)
-  AC_CHECK_SIZEOF([long], 4)
-  AC_CHECK_SIZEOF([long long], 8)
+  AC_CHECK_SIZEOF([short])
+  AC_CHECK_SIZEOF([int])
+  AC_CHECK_SIZEOF([long])
+  AC_CHECK_SIZEOF([long long])
+  AC_CHECK_SIZEOF([size_t])
   AC_CHECK_TYPES([int8, int16, int32, int64, int8_t, int16_t, int32_t, int64_t, uint8, uint16, uint32, uint64, uint8_t, uint16_t, uint32_t, uint64_t, u_int8_t, u_int16_t, u_int32_t, u_int64_t], [], [], [
 #if HAVE_STDINT_H
 # include <stdint.h>
@@ -2980,7 +2618,6 @@ AC_DEFUN([PHP_CHECK_STDINT_TYPES], [
 # include <sys/types.h>
 #endif
   ])
-  AC_DEFINE([PHP_HAVE_STDINT_TYPES], [1], [Checked for stdint types])
 ])
 
 dnl PHP_CHECK_BUILTIN_EXPECT

@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -33,6 +33,9 @@
 #  define USE_MMAP      1
 # endif
 #elif defined(__linux__) || defined(_AIX)
+# ifdef HAVE_SHM_MMAP_POSIX
+#  define USE_SHM_OPEN  1
+# endif
 # ifdef HAVE_SHM_IPC
 #  define USE_SHM       1
 # endif
@@ -72,6 +75,7 @@
 
 typedef struct _zend_shared_segment {
     size_t  size;
+    size_t  end;
     size_t  pos;  /* position for simple stack allocator */
     void   *p;
 } zend_shared_segment;
@@ -110,6 +114,9 @@ typedef struct _zend_smm_shared_globals {
     zend_shared_memory_state   shared_memory_state;
 	/* Pointer to the application's shared data structures */
 	void                      *app_shared_globals;
+	/* Reserved shared memory */
+	void                      *reserved;
+	size_t                     reserved_size;
 } zend_smm_shared_globals;
 
 extern zend_smm_shared_globals *smm_shared_globals;
@@ -118,10 +125,11 @@ extern zend_smm_shared_globals *smm_shared_globals;
 
 #define SHARED_ALLOC_REATTACHED		(SUCCESS+1)
 
-int zend_shared_alloc_startup(size_t requested_size);
+int zend_shared_alloc_startup(size_t requested_size, size_t reserved_size);
 void zend_shared_alloc_shutdown(void);
 
 /* allocate shared memory block */
+void *zend_shared_alloc_pages(size_t requested_size);
 void *zend_shared_alloc(size_t size);
 
 /* copy into shared memory */

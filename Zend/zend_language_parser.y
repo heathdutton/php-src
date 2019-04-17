@@ -3,7 +3,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -51,16 +51,15 @@ static YYSIZE_T zend_yytnamerr(char*, const char*);
 %destructor { zend_ast_destroy($$); } <ast>
 %destructor { if ($$) zend_string_release_ex($$, 0); } <str>
 
-%left T_INCLUDE T_INCLUDE_ONCE T_EVAL T_REQUIRE T_REQUIRE_ONCE
-%left ','
+%precedence T_INCLUDE T_INCLUDE_ONCE T_REQUIRE T_REQUIRE_ONCE
 %left T_LOGICAL_OR
 %left T_LOGICAL_XOR
 %left T_LOGICAL_AND
-%right T_PRINT
-%right T_YIELD
-%right T_DOUBLE_ARROW
-%right T_YIELD_FROM
-%left '=' T_PLUS_EQUAL T_MINUS_EQUAL T_MUL_EQUAL T_DIV_EQUAL T_CONCAT_EQUAL T_MOD_EQUAL T_AND_EQUAL T_OR_EQUAL T_XOR_EQUAL T_SL_EQUAL T_SR_EQUAL T_POW_EQUAL
+%precedence T_PRINT
+%precedence T_YIELD
+%precedence T_DOUBLE_ARROW
+%precedence T_YIELD_FROM
+%precedence '=' T_PLUS_EQUAL T_MINUS_EQUAL T_MUL_EQUAL T_DIV_EQUAL T_CONCAT_EQUAL T_MOD_EQUAL T_AND_EQUAL T_OR_EQUAL T_XOR_EQUAL T_SL_EQUAL T_SR_EQUAL T_POW_EQUAL T_COALESCE_EQUAL
 %left '?' ':'
 %right T_COALESCE
 %left T_BOOLEAN_OR
@@ -73,17 +72,16 @@ static YYSIZE_T zend_yytnamerr(char*, const char*);
 %left T_SL T_SR
 %left '+' '-' '.'
 %left '*' '/' '%'
-%right '!'
-%nonassoc T_INSTANCEOF
-%right '~' T_INC T_DEC T_INT_CAST T_DOUBLE_CAST T_STRING_CAST T_ARRAY_CAST T_OBJECT_CAST T_BOOL_CAST T_UNSET_CAST '@'
+%precedence '!'
+%precedence T_INSTANCEOF
+%precedence '~' T_INC T_DEC T_INT_CAST T_DOUBLE_CAST T_STRING_CAST T_ARRAY_CAST T_OBJECT_CAST T_BOOL_CAST T_UNSET_CAST '@'
 %right T_POW
-%right '['
-%nonassoc T_NEW T_CLONE
-%left T_NOELSE
-%left T_ELSEIF
-%left T_ELSE
-%left T_ENDIF
-%right T_STATIC T_ABSTRACT T_FINAL T_PRIVATE T_PROTECTED T_PUBLIC
+%precedence T_NEW T_CLONE
+
+/* Resolve danging else conflict */
+%precedence T_NOELSE
+%precedence T_ELSEIF
+%precedence T_ELSE
 
 %token <ast> T_LNUMBER   "integer number (T_LNUMBER)"
 %token <ast> T_DNUMBER   "floating-point number (T_DNUMBER)"
@@ -118,6 +116,7 @@ static YYSIZE_T zend_yytnamerr(char*, const char*);
 %token T_XOR_EQUAL    "^= (T_XOR_EQUAL)"
 %token T_SL_EQUAL     "<<= (T_SL_EQUAL)"
 %token T_SR_EQUAL     ">>= (T_SR_EQUAL)"
+%token T_COALESCE_EQUAL "??= (T_COALESCE_EQUAL)"
 %token T_BOOLEAN_OR   "|| (T_BOOLEAN_OR)"
 %token T_BOOLEAN_AND  "&& (T_BOOLEAN_AND)"
 %token T_IS_EQUAL     "== (T_IS_EQUAL)"
@@ -716,8 +715,9 @@ class_statement_list:
 
 
 class_statement:
-		variable_modifiers property_list ';'
-			{ $$ = $2; $$->attr = $1; }
+		variable_modifiers optional_type property_list ';'
+			{ $$ = zend_ast_create(ZEND_AST_PROP_GROUP, $2, $3);
+			  $$->attr = $1; }
 	|	method_modifiers T_CONST class_const_list ';'
 			{ $$ = $3; $$->attr = $1; }
 	|	T_USE name_list trait_adaptations
@@ -905,6 +905,8 @@ expr:
 			{ $$ = zend_ast_create_assign_op(ZEND_ASSIGN_SL, $1, $3); }
 	|	variable T_SR_EQUAL expr
 			{ $$ = zend_ast_create_assign_op(ZEND_ASSIGN_SR, $1, $3); }
+	|	variable T_COALESCE_EQUAL expr
+			{ $$ = zend_ast_create(ZEND_AST_ASSIGN_COALESCE, $1, $3); }
 	|	variable T_INC { $$ = zend_ast_create(ZEND_AST_POST_INC, $1); }
 	|	T_INC variable { $$ = zend_ast_create(ZEND_AST_PRE_INC, $2); }
 	|	variable T_DEC { $$ = zend_ast_create(ZEND_AST_POST_DEC, $1); }
@@ -1095,9 +1097,9 @@ scalar:
 constant:
 		name { $$ = zend_ast_create(ZEND_AST_CONST, $1); }
 	|	class_name T_PAAMAYIM_NEKUDOTAYIM identifier
-			{ $$ = zend_ast_create(ZEND_AST_CLASS_CONST, $1, $3); }
+			{ $$ = zend_ast_create_class_const_or_name($1, $3); }
 	|	variable_class_name T_PAAMAYIM_NEKUDOTAYIM identifier
-			{ $$ = zend_ast_create(ZEND_AST_CLASS_CONST, $1, $3); }
+			{ $$ = zend_ast_create_class_const_or_name($1, $3); }
 ;
 
 optional_expr:
@@ -1365,13 +1367,3 @@ static YYSIZE_T zend_yytnamerr(char *yyres, const char *yystr)
 	yystpcpy(yyres, yystr);
 	return strlen(yystr);
 }
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

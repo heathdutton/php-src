@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -308,18 +308,35 @@ PW32IO int php_win32_ioutil_mkdir_w(const wchar_t *path, mode_t mode)
 		 already needs to be a long path. The given path is already normalized
 		 and prepared, need only to prefix it.
 		 */
-		wchar_t *tmp = (wchar_t *) malloc((path_len + PHP_WIN32_IOUTIL_LONG_PATH_PREFIX_LENW + 1) * sizeof(wchar_t));
+		wchar_t *tmp = (wchar_t *) malloc((path_len + 1) * sizeof(wchar_t));
 		if (!tmp) {
 			SET_ERRNO_FROM_WIN32_CODE(ERROR_NOT_ENOUGH_MEMORY);
 			return -1;
 		}
+		memmove(tmp, path, (path_len + 1) * sizeof(wchar_t));
 
-		memmove(tmp, PHP_WIN32_IOUTIL_LONG_PATH_PREFIXW, PHP_WIN32_IOUTIL_LONG_PATH_PREFIX_LENW * sizeof(wchar_t));
-		memmove(tmp+PHP_WIN32_IOUTIL_LONG_PATH_PREFIX_LENW, path, path_len * sizeof(wchar_t));
-		path_len += PHP_WIN32_IOUTIL_LONG_PATH_PREFIX_LENW;
-		tmp[path_len] = L'\0';
+		if (PHP_WIN32_IOUTIL_NORM_FAIL == php_win32_ioutil_normalize_path_w(&tmp, path_len, &path_len)) {
+			free(tmp);
+			return -1;
+		}
+
+		if (!PHP_WIN32_IOUTIL_IS_LONG_PATHW(tmp, path_len)) {
+			wchar_t *_tmp = (wchar_t *) malloc((path_len + PHP_WIN32_IOUTIL_LONG_PATH_PREFIX_LENW + 1) * sizeof(wchar_t));
+			if (!_tmp) {
+				SET_ERRNO_FROM_WIN32_CODE(ERROR_NOT_ENOUGH_MEMORY);
+				free(tmp);
+				return -1;
+			}
+			memmove(_tmp, PHP_WIN32_IOUTIL_LONG_PATH_PREFIXW, PHP_WIN32_IOUTIL_LONG_PATH_PREFIX_LENW * sizeof(wchar_t));
+			memmove(_tmp+PHP_WIN32_IOUTIL_LONG_PATH_PREFIX_LENW, tmp, path_len * sizeof(wchar_t));
+			path_len += PHP_WIN32_IOUTIL_LONG_PATH_PREFIX_LENW;
+			_tmp[path_len] = L'\0';
+			free(tmp);
+			tmp = _tmp;
+		}
 
 		my_path = tmp;
+
 	} else {
 		my_path = path;
 	}
@@ -575,7 +592,7 @@ PW32IO size_t php_win32_ioutil_dirname(char *path, size_t len)
 /* Partial normalization can still be acceptable, explicit fail has to be caught. */
 PW32IO php_win32_ioutil_normalization_result php_win32_ioutil_normalize_path_w(wchar_t **buf, size_t len, size_t *new_len)
 {/*{{{*/
-	wchar_t *pos, *idx = *buf, canonicalw[MAXPATHLEN];
+	wchar_t *idx = *buf, canonicalw[MAXPATHLEN], _tmp[MAXPATHLEN], *pos = _tmp;
 	size_t ret_len = len;
 
 	if (len >= MAXPATHLEN) {
@@ -584,12 +601,17 @@ PW32IO php_win32_ioutil_normalization_result php_win32_ioutil_normalize_path_w(w
 		return PHP_WIN32_IOUTIL_NORM_FAIL;
 	}
 
-	while (NULL != (pos = wcschr(idx, PHP_WIN32_IOUTIL_FW_SLASHW)) && (size_t)(idx - *buf) <= len) {
-		*pos = PHP_WIN32_IOUTIL_DEFAULT_SLASHW;
-		idx = pos++;
+	for (; (size_t)(idx - *buf) <= len; idx++, pos++) {
+		*pos = *idx;
+		if (PHP_WIN32_IOUTIL_FW_SLASHW == *pos) {
+			*pos = PHP_WIN32_IOUTIL_DEFAULT_SLASHW;
+		}
+		while (PHP_WIN32_IOUTIL_IS_SLASHW(*idx) && PHP_WIN32_IOUTIL_IS_SLASHW(*(idx+1))) {
+			idx++;
+		}
 	}
 
-	if (S_OK != canonicalize_path_w(canonicalw, MAXPATHLEN, *buf, PATHCCH_ALLOW_LONG_PATHS)) {
+	if (S_OK != canonicalize_path_w(canonicalw, MAXPATHLEN, _tmp, PATHCCH_ALLOW_LONG_PATHS)) {
 		/* Length unchanged. */
 		*new_len = len;
 		return PHP_WIN32_IOUTIL_NORM_PARTIAL;
@@ -1004,6 +1026,13 @@ static ssize_t php_win32_ioutil_readlink_int(HANDLE h, wchar_t *buf, size_t buf_
 
 	if (reparse_data->ReparseTag == IO_REPARSE_TAG_SYMLINK) {
 		/* Real symlink */
+
+		/* BC - relative links are shown as absolute */
+		if (reparse_data->SymbolicLinkReparseBuffer.Flags & SYMLINK_FLAG_RELATIVE) {
+			SET_ERRNO_FROM_WIN32_CODE(ERROR_SYMLINK_NOT_SUPPORTED);
+			return -1;
+		}
+
 		reparse_target = reparse_data->SymbolicLinkReparseBuffer.ReparseTarget +
 			(reparse_data->SymbolicLinkReparseBuffer.SubstituteNameOffset /
 			sizeof(wchar_t));
@@ -1095,6 +1124,7 @@ PW32IO ssize_t php_win32_ioutil_readlink_w(const wchar_t *path, wchar_t *buf, si
 	HANDLE h;
 	ssize_t ret;
 
+	/* Get a handle to the symbolic link (if path is a symbolic link) */
 	h = CreateFileW(path,
 					0,
 					0,
@@ -1110,11 +1140,27 @@ PW32IO ssize_t php_win32_ioutil_readlink_w(const wchar_t *path, wchar_t *buf, si
 
 	ret = php_win32_ioutil_readlink_int(h, buf, buf_len);
 
-	if (ret < 0) {
-		/* BC */
-		wchar_t target[PHP_WIN32_IOUTIL_MAXPATHLEN];
-		size_t offset = 0,
-			   target_len = GetFinalPathNameByHandleW(h, target, PHP_WIN32_IOUTIL_MAXPATHLEN, VOLUME_NAME_DOS);
+	if (ret < 0) {		
+		wchar_t target[PHP_WIN32_IOUTIL_MAXPATHLEN];		
+		size_t target_len;
+		size_t offset = 0;
+
+		/* BC - get a handle to the target (if path is a symbolic link) */
+		CloseHandle(h);
+		h = CreateFileW(path,
+						0,
+						0,
+						NULL,
+						OPEN_EXISTING,
+						FILE_FLAG_BACKUP_SEMANTICS,
+						NULL);
+
+		if (h == INVALID_HANDLE_VALUE) {
+			SET_ERRNO_FROM_WIN32_CODE(GetLastError());
+			return -1;
+		}
+
+		target_len = GetFinalPathNameByHandleW(h, target, PHP_WIN32_IOUTIL_MAXPATHLEN, VOLUME_NAME_DOS);
 
 		if(target_len >= buf_len || target_len >= PHP_WIN32_IOUTIL_MAXPATHLEN || target_len == 0) {
 			CloseHandle(h);
@@ -1142,12 +1188,3 @@ PW32IO ssize_t php_win32_ioutil_readlink_w(const wchar_t *path, wchar_t *buf, si
 
 	return ret;
 }/*}}}*/
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

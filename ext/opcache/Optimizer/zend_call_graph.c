@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine, Call Graph                                              |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -71,7 +71,9 @@ static int zend_foreach_op_array(zend_call_graph *call_graph, zend_script *scrip
 			continue;
 		}
 		ZEND_HASH_FOREACH_PTR(&ce->function_table, op_array) {
-			if (op_array->scope == ce && !(op_array->fn_flags & ZEND_ACC_TRAIT_CLONE)) {
+			if (op_array->scope == ce
+			 && op_array->type == ZEND_USER_FUNCTION
+			 && !(op_array->fn_flags & ZEND_ACC_TRAIT_CLONE)) {
 				if (func(call_graph, op_array) != SUCCESS) {
 					return FAILURE;
 				}
@@ -294,11 +296,3 @@ zend_call_info **zend_build_call_map(zend_arena **arena, zend_func_info *info, z
 	return map;
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- */

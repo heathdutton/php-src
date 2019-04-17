@@ -62,7 +62,7 @@ echo "\n*** Testing is_string() on non string values ***\n";
 
 // get a resource type variable
 $fp = fopen (__FILE__, "r");
-$dfp = opendir ( dirname(__FILE__) );
+$dfp = opendir ( __DIR__ );
 
 // unset vars
 $unset_string1 = "string";
@@ -139,13 +139,6 @@ foreach ($not_strings as $type ) {
   echo "-- Iteration $loop_counter --\n"; $loop_counter++;
   var_dump( is_string($type) );
 }
-
-echo "\n*** Testing error conditions ***\n";
-//Zero argument
-var_dump( is_string() );
-
-//arguments more than expected
-var_dump( is_string("string", "test") );
 
 echo "Done\n";
 
@@ -291,13 +284,5 @@ bool(false)
 -- Iteration 44 --
 bool(false)
 -- Iteration 45 --
-bool(false)
-
-*** Testing error conditions ***
-
-Warning: is_string() expects exactly 1 parameter, 0 given in %s on line %d
-bool(false)
-
-Warning: is_string() expects exactly 1 parameter, 2 given in %s on line %d
 bool(false)
 Done

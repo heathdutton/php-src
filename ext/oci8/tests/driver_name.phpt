@@ -3,14 +3,14 @@ Verify that the Driver Name attribute is set
 --SKIPIF--
 <?php if (!extension_loaded('oci8')) die("skip no oci8 extension");
 
-require(dirname(__FILE__)."/connect.inc");
+require(__DIR__."/connect.inc");
 if (strcasecmp($user, "system") && strcasecmp($user, "sys")) die("skip needs to be run as a DBA user");
 if ($test_drcp) die("skip as Output might vary with DRCP");
 
 preg_match('/.*Release ([[:digit:]]+)\.([[:digit:]]+)\.([[:digit:]]+)\.([[:digit:]]+)\.([[:digit:]]+)*/', oci_server_version($c), $matches);
-if (!(isset($matches[0]) &&
+if (!(isset($matches[0]) && ($matches[1] > 12 ||
      ($matches[1] == 12 && $matches[2] == 1 && $matches[3] >= 0
-     && $matches[4] >= 2) || ($matches[1] == 12 && $matches[2] > 1))) {
+         && $matches[4] >= 2) || ($matches[1] == 12 && $matches[2] > 1)))) {
     die("skip test expected to work only with Oracle 12.1.0.2 database or its later patchsets");
 }
 
@@ -22,7 +22,7 @@ if (!(isset($matches[0]) && ($matches[1] == 11 && $matches[2] >= 2) || ($matches
 ?>
 --FILE--
 <?php
-require(dirname(__FILE__)."/connect.inc");
+require(__DIR__."/connect.inc");
 
 echo"**Test 1.1 - Default values for the attribute **************\n";
 get_attr($c);
@@ -57,11 +57,11 @@ function get_attr($conn)
 ?>
 --EXPECT--
 **Test 1.1 - Default values for the attribute **************
-The value of DRIVER_NAME is PHP OCI8 : 2.1.8
+The value of DRIVER_NAME is PHP OCI8 : 2.2.0
 
 ***Test 1.2 - Get the values from different connections **************
 Testing with oci_pconnect()
-The value of DRIVER_NAME is PHP OCI8 : 2.1.8
+The value of DRIVER_NAME is PHP OCI8 : 2.2.0
 Testing with oci_new_connect()
-The value of DRIVER_NAME is PHP OCI8 : 2.1.8
+The value of DRIVER_NAME is PHP OCI8 : 2.2.0
 Done

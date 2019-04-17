@@ -1,7 +1,9 @@
 dnl This file becomes configure.ac for self-contained extensions.
 
 AC_PREREQ([2.68])
-AC_INIT(config.m4)
+AC_INIT
+AC_CONFIG_SRCDIR([config.m4])
+AC_CONFIG_AUX_DIR([build])
 AC_PRESERVE_HELP_ORDER
 
 PHP_CONFIG_NICE(config.nice)
@@ -25,18 +27,24 @@ abs_builddir=`pwd`
 AC_PROG_CC([cc gcc])
 PHP_DETECT_ICC
 PHP_DETECT_SUNCC
-AC_PROG_CC_C_O
 
 dnl Support systems with system libraries in e.g. /usr/lib64
-PHP_ARG_WITH(libdir, for system library directory,
-[  --with-libdir=NAME      Look for libraries in .../NAME rather than .../lib], lib, no)
+PHP_ARG_WITH([libdir],
+  [for system library directory],
+  [AS_HELP_STRING([--with-libdir=NAME],
+    [Look for libraries in .../NAME rather than .../lib])],
+  [lib],
+  [no])
 
 PHP_RUNPATH_SWITCH
 PHP_SHLIB_SUFFIX_NAMES
 
 dnl Find php-config script
-PHP_ARG_WITH(php-config,,
-[  --with-php-config=PATH  Path to php-config [php-config]], php-config, no)
+PHP_ARG_WITH([php-config],,
+  [AS_HELP_STRING([--with-php-config=PATH],
+    [Path to php-config [php-config]])],
+  [php-config],
+  [no])
 
 dnl For BC
 PHP_CONFIG=$PHP_PHP_CONFIG
@@ -130,7 +138,6 @@ dnl Always shared
 PHP_BUILD_SHARED
 
 dnl Required programs
-PHP_PROG_RE2C
 PHP_PROG_AWK
 
 sinclude(config.m4)

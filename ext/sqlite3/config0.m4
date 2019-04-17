@@ -1,20 +1,21 @@
 dnl config.m4 for extension sqlite3
-dnl vim:et:ts=2:sw=2
 
-PHP_ARG_WITH(sqlite3, whether to enable the SQLite3 extension,
-[  --without-sqlite3[=DIR]   Do not include SQLite3 support. DIR is the prefix to
-                          SQLite3 installation directory.], yes)
+PHP_ARG_WITH([sqlite3],
+  [whether to enable the SQLite3 extension],
+  [AS_HELP_STRING([[--without-sqlite3[=DIR]]],
+    [Do not include SQLite3 support. DIR is the prefix to SQLite3 installation
+    directory.])],
+  [yes])
 
 if test $PHP_SQLITE3 != "no"; then
-  sqlite3_extra_sources=""
   PHP_SQLITE3_CFLAGS=" -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1 "
 
-  dnl when running phpize enable_maintainer_zts is not available
-  if test -z "$enable_maintainer_zts"; then
+  dnl when running phpize enable_zts is not available
+  if test -z "$enable_zts"; then
     if test -f "$phpincludedir/main/php_config.h"; then
       ZTS=`grep '#define ZTS' $phpincludedir/main/php_config.h|$SED 's/#define ZTS//'`
       if test "$ZTS" -eq "1"; then
-        enable_maintainer_zts="yes"
+        enable_zts="yes"
       fi
     fi
   fi
@@ -62,7 +63,7 @@ if test $PHP_SQLITE3 != "no"; then
 
   AC_DEFINE(HAVE_SQLITE3,1,[ ])
 
-  sqlite3_sources="sqlite3.c $sqlite3_extra_sources"
+  sqlite3_sources="sqlite3.c"
 
   PHP_NEW_EXTENSION(sqlite3, $sqlite3_sources, $ext_shared,,$PHP_SQLITE3_CFLAGS)
   PHP_ADD_BUILD_DIR([$ext_builddir/libsqlite])

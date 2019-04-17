@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -76,10 +76,7 @@ typedef struct yy_buffer_state *YY_BUFFER_STATE;
 #endif
 
 #include <string.h>
-
-#if HAVE_LOCALE_H
-# include <locale.h>
-#endif
+#include <locale.h>
 
 #if HAVE_SYS_MMAN_H
 # include <sys/mman.h>
@@ -122,10 +119,6 @@ typedef struct _user_tick_function_entry {
 /* some prototypes for local functions */
 static void user_shutdown_function_dtor(zval *zv);
 static void user_tick_function_dtor(user_tick_function_entry *tick_function_entry);
-
-static HashTable basic_submodules;
-
-#undef sprintf
 
 /* {{{ arginfo */
 /* {{{ main/main.c */
@@ -1101,12 +1094,6 @@ ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO(arginfo_fgetc, 0)
 	ZEND_ARG_INFO(0, fp)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO_EX(arginfo_fgetss, 0, 0, 1)
-	ZEND_ARG_INFO(0, fp)
-	ZEND_ARG_INFO(0, length)
-	ZEND_ARG_INFO(0, allowable_tags)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_fscanf, 0, 0, 2)
@@ -2396,7 +2383,7 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_setlocale, 0, 0, 2)
 	ZEND_ARG_VARIADIC_INFO(0, locales)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_INFO_EX(arginfo_parse_str, 0, 0, 1)
+ZEND_BEGIN_ARG_INFO_EX(arginfo_parse_str, 0, 0, 2)
 	ZEND_ARG_INFO(0, encoded_string)
 	ZEND_ARG_INFO(1, result)
 ZEND_END_ARG_INFO()
@@ -2723,6 +2710,16 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_sapi_windows_cp_conv, 0, 0, 3)
 	ZEND_ARG_INFO(0, in_codepage)
 	ZEND_ARG_INFO(0, out_codepage)
 	ZEND_ARG_TYPE_INFO(0, subject, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_sapi_windows_set_ctrl_handler, 0, 0, 1)
+	ZEND_ARG_INFO(0, callable)
+	ZEND_ARG_INFO(0, add)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_sapi_windows_generate_ctrl_event, 0, 0, 1)
+	ZEND_ARG_INFO(0, event)
+	ZEND_ARG_INFO(0, pid)
 ZEND_END_ARG_INFO()
 #endif
 /* }}} */
@@ -3134,7 +3131,6 @@ static const zend_function_entry basic_functions[] = { /* {{{ */
 	PHP_FE(feof,															arginfo_feof)
 	PHP_FE(fgetc,															arginfo_fgetc)
 	PHP_FE(fgets,															arginfo_fgets)
-	PHP_DEP_FE(fgetss,														arginfo_fgetss)
 	PHP_FE(fread,															arginfo_fread)
 	PHP_NAMED_FE(fopen,				php_if_fopen,							arginfo_fopen)
 	PHP_FE(fpassthru,														arginfo_fpassthru)
@@ -3439,6 +3435,8 @@ static const zend_function_entry basic_functions[] = { /* {{{ */
 	PHP_FE(sapi_windows_cp_get, arginfo_sapi_windows_cp_get)
 	PHP_FE(sapi_windows_cp_is_utf8, arginfo_sapi_windows_cp_is_utf8)
 	PHP_FE(sapi_windows_cp_conv, arginfo_sapi_windows_cp_conv)
+	PHP_FE(sapi_windows_set_ctrl_handler, arginfo_sapi_windows_set_ctrl_handler)
+	PHP_FE(sapi_windows_generate_ctrl_event, arginfo_sapi_windows_generate_ctrl_event)
 #endif
 	PHP_FE_END
 };
@@ -3579,32 +3577,21 @@ PHPAPI double php_get_inf(void) /* {{{ */
 /* }}} */
 
 #define BASIC_MINIT_SUBMODULE(module) \
-	if (PHP_MINIT(module)(INIT_FUNC_ARGS_PASSTHRU) == SUCCESS) {\
-		BASIC_ADD_SUBMODULE(module); \
+	if (PHP_MINIT(module)(INIT_FUNC_ARGS_PASSTHRU) != SUCCESS) {\
+		return FAILURE; \
 	}
-
-#define BASIC_ADD_SUBMODULE(module) \
-	zend_hash_str_add_empty_element(&basic_submodules, #module, strlen(#module));
 
 #define BASIC_RINIT_SUBMODULE(module) \
-	if (zend_hash_str_exists(&basic_submodules, #module, strlen(#module))) { \
-		PHP_RINIT(module)(INIT_FUNC_ARGS_PASSTHRU); \
-	}
+	PHP_RINIT(module)(INIT_FUNC_ARGS_PASSTHRU);
 
 #define BASIC_MINFO_SUBMODULE(module) \
-	if (zend_hash_str_exists(&basic_submodules, #module, strlen(#module))) { \
-		PHP_MINFO(module)(ZEND_MODULE_INFO_FUNC_ARGS_PASSTHRU); \
-	}
+	PHP_MINFO(module)(ZEND_MODULE_INFO_FUNC_ARGS_PASSTHRU);
 
 #define BASIC_RSHUTDOWN_SUBMODULE(module) \
-	if (zend_hash_str_exists(&basic_submodules, #module, strlen(#module))) { \
-		PHP_RSHUTDOWN(module)(SHUTDOWN_FUNC_ARGS_PASSTHRU); \
-	}
+	PHP_RSHUTDOWN(module)(SHUTDOWN_FUNC_ARGS_PASSTHRU);
 
 #define BASIC_MSHUTDOWN_SUBMODULE(module) \
-	if (zend_hash_str_exists(&basic_submodules, #module, strlen(#module))) { \
-		PHP_MSHUTDOWN(module)(SHUTDOWN_FUNC_ARGS_PASSTHRU); \
-	}
+	PHP_MSHUTDOWN(module)(SHUTDOWN_FUNC_ARGS_PASSTHRU);
 
 PHP_MINIT_FUNCTION(basic) /* {{{ */
 {
@@ -3619,8 +3606,6 @@ PHP_MINIT_FUNCTION(basic) /* {{{ */
 	php_win32_core_globals_ctor(&the_php_win32_core_globals);
 #endif
 #endif
-
-	zend_hash_init(&basic_submodules, 0, NULL, NULL, 1);
 
 	BG(incomplete_class) = incomplete_class_entry = php_create_incomplete_class();
 
@@ -3682,9 +3667,6 @@ PHP_MINIT_FUNCTION(basic) /* {{{ */
 	register_html_constants(INIT_FUNC_ARGS_PASSTHRU);
 	register_string_constants(INIT_FUNC_ARGS_PASSTHRU);
 
-	BASIC_ADD_SUBMODULE(dl)
-	BASIC_ADD_SUBMODULE(mail)
-	BASIC_ADD_SUBMODULE(streams)
 	BASIC_MINIT_SUBMODULE(file)
 	BASIC_MINIT_SUBMODULE(pack)
 	BASIC_MINIT_SUBMODULE(browscap)
@@ -3693,7 +3675,7 @@ PHP_MINIT_FUNCTION(basic) /* {{{ */
 	BASIC_MINIT_SUBMODULE(password)
 	BASIC_MINIT_SUBMODULE(mt_rand)
 
-#if defined(HAVE_LOCALECONV) && defined(ZTS)
+#if defined(ZTS)
 	BASIC_MINIT_SUBMODULE(localeconv)
 #endif
 
@@ -3777,13 +3759,13 @@ PHP_MSHUTDOWN_FUNCTION(basic) /* {{{ */
 	BASIC_MSHUTDOWN_SUBMODULE(url_scanner_ex)
 	BASIC_MSHUTDOWN_SUBMODULE(file)
 	BASIC_MSHUTDOWN_SUBMODULE(standard_filters)
-#if defined(HAVE_LOCALECONV) && defined(ZTS)
+#if defined(ZTS)
 	BASIC_MSHUTDOWN_SUBMODULE(localeconv)
 #endif
 	BASIC_MSHUTDOWN_SUBMODULE(crypt)
 	BASIC_MSHUTDOWN_SUBMODULE(random)
+	BASIC_MSHUTDOWN_SUBMODULE(password)
 
-	zend_hash_destroy(&basic_submodules);
 	return SUCCESS;
 }
 /* }}} */
@@ -3840,7 +3822,9 @@ PHP_RSHUTDOWN_FUNCTION(basic) /* {{{ */
 	ZVAL_UNDEF(&BG(strtok_zval));
 	BG(strtok_string) = NULL;
 #ifdef HAVE_PUTENV
+	tsrm_env_lock();
 	zend_hash_destroy(&BG(putenv_ht));
+	tsrm_env_unlock();
 #endif
 
 	BG(mt_rand_is_seeded) = 0;
@@ -4149,11 +4133,22 @@ PHP_FUNCTION(getenv)
 		}
 	}
 #else
+
+    tsrm_env_lock();
+    
 	/* system method returns a const */
 	ptr = getenv(str);
+	
 	if (ptr) {
-		RETURN_STRING(ptr);
+		RETVAL_STRING(ptr);
 	}
+
+    tsrm_env_unlock();
+
+    if (ptr) {
+        return;
+    }
+
 #endif
 	RETURN_FALSE;
 }
@@ -4204,6 +4199,7 @@ PHP_FUNCTION(putenv)
 	}
 #endif
 
+	tsrm_env_lock();
 	zend_hash_str_del(&BG(putenv_ht), pe.key, pe.key_len);
 
 	/* find previous value */
@@ -4264,6 +4260,7 @@ PHP_FUNCTION(putenv)
 			tzset();
 		}
 #endif
+		tsrm_env_unlock();
 #if defined(PHP_WIN32)
 		free(keyw);
 		free(valw);
@@ -4375,13 +4372,12 @@ PHP_FUNCTION(getopt)
 		Z_PARAM_STRING(options, options_len)
 		Z_PARAM_OPTIONAL
 		Z_PARAM_ARRAY(p_longopts)
-		Z_PARAM_ZVAL_DEREF(zoptind)
+		Z_PARAM_ZVAL(zoptind)
 	ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
 
 	/* Init zoptind to 1 */
 	if (zoptind) {
-		zval_ptr_dtor(zoptind);
-		ZVAL_LONG(zoptind, 1);
+		ZEND_TRY_ASSIGN_LONG(zoptind, 1);
 	}
 
 	/* Get argv from the global symbol table. We calculate argc ourselves
@@ -4529,7 +4525,7 @@ PHP_FUNCTION(getopt)
 
 	/* Set zoptind to php_optind */
 	if (zoptind) {
-		ZVAL_LONG(zoptind, php_optind);
+		ZEND_TRY_ASSIGN_LONG(zoptind, php_optind);
 	}
 
 	free_longopts(orig_opts);
@@ -4687,25 +4683,38 @@ PHP_FUNCTION(get_current_user)
 }
 /* }}} */
 
-/* {{{ add_config_entry_cb
- */
-static int add_config_entry_cb(zval *entry, int num_args, va_list args, zend_hash_key *hash_key)
-{
-	zval *retval = (zval *)va_arg(args, zval*);
-	zval tmp;
+static void add_config_entries(HashTable *hash, zval *return_value);
 
+/* {{{ add_config_entry
+ */
+static void add_config_entry(zend_ulong h, zend_string *key, zval *entry, zval *retval)
+{
 	if (Z_TYPE_P(entry) == IS_STRING) {
-		if (hash_key->key) {
-			add_assoc_str_ex(retval, ZSTR_VAL(hash_key->key), ZSTR_LEN(hash_key->key), zend_string_copy(Z_STR_P(entry)));
+		if (key) {
+			add_assoc_str_ex(retval, ZSTR_VAL(key), ZSTR_LEN(key), zend_string_copy(Z_STR_P(entry)));
 		} else {
-			add_index_str(retval, hash_key->h, zend_string_copy(Z_STR_P(entry)));
+			add_index_str(retval, h, zend_string_copy(Z_STR_P(entry)));
 		}
 	} else if (Z_TYPE_P(entry) == IS_ARRAY) {
+		zval tmp;
 		array_init(&tmp);
-		zend_hash_apply_with_arguments(Z_ARRVAL_P(entry), add_config_entry_cb, 1, tmp);
-		zend_hash_update(Z_ARRVAL_P(retval), hash_key->key, &tmp);
+		add_config_entries(Z_ARRVAL_P(entry), &tmp);
+		zend_hash_update(Z_ARRVAL_P(retval), key, &tmp);
 	}
-	return 0;
+}
+/* }}} */
+
+/* {{{ add_config_entries
+ */
+static void add_config_entries(HashTable *hash, zval *return_value) /* {{{ */
+{
+	zend_ulong h;
+	zend_string *key;
+	zval *zv;
+
+	ZEND_HASH_FOREACH_KEY_VAL(hash, h, key, zv)
+		add_config_entry(h, key, zv, return_value);
+	ZEND_HASH_FOREACH_END();
 }
 /* }}} */
 
@@ -4726,7 +4735,7 @@ PHP_FUNCTION(get_cfg_var)
 	if (retval) {
 		if (Z_TYPE_P(retval) == IS_ARRAY) {
 			array_init(return_value);
-			zend_hash_apply_with_arguments(Z_ARRVAL_P(retval), add_config_entry_cb, 1, return_value);
+			add_config_entries(Z_ARRVAL_P(retval), return_value);
 			return;
 		} else {
 			RETURN_STRING(Z_STRVAL_P(retval));
@@ -4896,7 +4905,7 @@ PHP_FUNCTION(error_clear_last)
 }
 /* }}} */
 
-/* {{{ proto mixed call_user_func(mixed function_name [, mixed parmeter] [, mixed ...])
+/* {{{ proto mixed call_user_func(mixed function_name [, mixed parameter] [, mixed ...])
    Call a user function which is the first parameter
    Warning: This function is special-cased by zend_compile.c and so is usually bypassed */
 PHP_FUNCTION(call_user_func)
@@ -4949,7 +4958,7 @@ PHP_FUNCTION(call_user_func_array)
 }
 /* }}} */
 
-/* {{{ proto mixed forward_static_call(mixed function_name [, mixed parmeter] [, mixed ...]) U
+/* {{{ proto mixed forward_static_call(mixed function_name [, mixed parameter] [, mixed ...]) U
    Call a user function which is the first parameter */
 PHP_FUNCTION(forward_static_call)
 {
@@ -5056,7 +5065,7 @@ static int user_shutdown_function_call(zval *zv) /* {{{ */
 		return 0;
 	}
 
-	if (call_user_function(EG(function_table), NULL,
+	if (call_user_function(NULL, NULL,
 				&shutdown_function_entry->arguments[0],
 				&retval,
 				shutdown_function_entry->arg_count - 1,
@@ -5077,7 +5086,7 @@ static void user_tick_function_call(user_tick_function_entry *tick_fe) /* {{{ */
 	if (! tick_fe->calling) {
 		tick_fe->calling = 1;
 
-		if (call_user_function(	EG(function_table), NULL,
+		if (call_user_function(NULL, NULL,
 								function,
 								&retval,
 								tick_fe->arg_count - 1,
@@ -5406,64 +5415,17 @@ PHP_FUNCTION(ini_get)
 }
 /* }}} */
 
-static int php_ini_get_option(zval *zv, int num_args, va_list args, zend_hash_key *hash_key) /* {{{ */
-{
-	zend_ini_entry *ini_entry = Z_PTR_P(zv);
-	zval *ini_array = va_arg(args, zval *);
-	int module_number = va_arg(args, int);
-	int details = va_arg(args, int);
-	zval option;
-
-	if (module_number != 0 && ini_entry->module_number != module_number) {
-		return 0;
-	}
-
-	if (hash_key->key == NULL ||
-		ZSTR_VAL(hash_key->key)[0] != 0
-	) {
-		if (details) {
-			array_init(&option);
-
-			if (ini_entry->orig_value) {
-				add_assoc_str(&option, "global_value", zend_string_copy(ini_entry->orig_value));
-			} else if (ini_entry->value) {
-				add_assoc_str(&option, "global_value", zend_string_copy(ini_entry->value));
-			} else {
-				add_assoc_null(&option, "global_value");
-			}
-
-			if (ini_entry->value) {
-				add_assoc_str(&option, "local_value", zend_string_copy(ini_entry->value));
-			} else {
-				add_assoc_null(&option, "local_value");
-			}
-
-			add_assoc_long(&option, "access", ini_entry->modifiable);
-
-			zend_symtable_update(Z_ARRVAL_P(ini_array), ini_entry->name, &option);
-		} else {
-			if (ini_entry->value) {
-				zval zv;
-
-				ZVAL_STR_COPY(&zv, ini_entry->value);
-				zend_symtable_update(Z_ARRVAL_P(ini_array), ini_entry->name, &zv);
-			} else {
-				zend_symtable_update(Z_ARRVAL_P(ini_array), ini_entry->name, &EG(uninitialized_zval));
-			}
-		}
-	}
-	return 0;
-}
-/* }}} */
-
 /* {{{ proto array ini_get_all([string extension[, bool details = true]])
    Get all configuration options */
 PHP_FUNCTION(ini_get_all)
 {
 	char *extname = NULL;
-	size_t extname_len = 0, extnumber = 0;
+	size_t extname_len = 0, module_number = 0;
 	zend_module_entry *module;
 	zend_bool details = 1;
+	zend_string *key;
+	zend_ini_entry *ini_entry;
+
 
 	ZEND_PARSE_PARAMETERS_START(0, 2)
 		Z_PARAM_OPTIONAL
@@ -5478,11 +5440,50 @@ PHP_FUNCTION(ini_get_all)
 			php_error_docref(NULL, E_WARNING, "Unable to find extension '%s'", extname);
 			RETURN_FALSE;
 		}
-		extnumber = module->module_number;
+		module_number = module->module_number;
 	}
 
 	array_init(return_value);
-	zend_hash_apply_with_arguments(EG(ini_directives), php_ini_get_option, 2, return_value, extnumber, details);
+	ZEND_HASH_FOREACH_STR_KEY_PTR(EG(ini_directives), key, ini_entry) {
+		zval option;
+
+		if (module_number != 0 && ini_entry->module_number != module_number) {
+			continue;
+		}
+
+		if (key == NULL || ZSTR_VAL(key)[0] != 0) {
+			if (details) {
+				array_init(&option);
+
+				if (ini_entry->orig_value) {
+					add_assoc_str(&option, "global_value", zend_string_copy(ini_entry->orig_value));
+				} else if (ini_entry->value) {
+					add_assoc_str(&option, "global_value", zend_string_copy(ini_entry->value));
+				} else {
+					add_assoc_null(&option, "global_value");
+				}
+
+				if (ini_entry->value) {
+					add_assoc_str(&option, "local_value", zend_string_copy(ini_entry->value));
+				} else {
+					add_assoc_null(&option, "local_value");
+				}
+
+				add_assoc_long(&option, "access", ini_entry->modifiable);
+
+				zend_symtable_update(Z_ARRVAL_P(return_value), ini_entry->name, &option);
+			} else {
+				if (ini_entry->value) {
+					zval zv;
+
+					ZVAL_STR_COPY(&zv, ini_entry->value);
+					zend_symtable_update(Z_ARRVAL_P(return_value), ini_entry->name, &zv);
+				} else {
+					zend_symtable_update(Z_ARRVAL_P(return_value), ini_entry->name, &EG(uninitialized_zval));
+				}
+			}
+		}
+	} ZEND_HASH_FOREACH_END();
 }
 /* }}} */
 
@@ -6141,7 +6142,7 @@ PHP_FUNCTION(config_get_hash) /* {{{ */
 	HashTable *hash = php_ini_get_configuration_hash();
 
 	array_init(return_value);
-	zend_hash_apply_with_arguments(hash, add_config_entry_cb, 1, return_value);
+	add_config_entries(hash, return_value);
 }
 /* }}} */
 #endif
@@ -6168,12 +6169,3 @@ PHP_FUNCTION(sys_getloadavg)
 }
 /* }}} */
 #endif
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: fdm=marker
- * vim: noet sw=4 ts=4
- */

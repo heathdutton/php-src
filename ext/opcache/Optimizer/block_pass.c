@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -33,27 +33,9 @@
 /* Checks if a constant (like "true") may be replaced by its value */
 int zend_optimizer_get_persistent_constant(zend_string *name, zval *result, int copy)
 {
-	zend_constant *c;
-	char *lookup_name;
-	int retval = 1;
-	ALLOCA_FLAG(use_heap);
-
-	if ((c = zend_hash_find_ptr(EG(zend_constants), name)) == NULL) {
-		lookup_name = do_alloca(ZSTR_LEN(name) + 1, use_heap);
-		memcpy(lookup_name, ZSTR_VAL(name), ZSTR_LEN(name) + 1);
-		zend_str_tolower(lookup_name, ZSTR_LEN(name));
-
-		if ((c = zend_hash_str_find_ptr(EG(zend_constants), lookup_name, ZSTR_LEN(name))) != NULL) {
-			if (!(ZEND_CONSTANT_FLAGS(c) & CONST_CT_SUBST) || (ZEND_CONSTANT_FLAGS(c) & CONST_CS)) {
-				retval = 0;
-			}
-		} else {
-			retval = 0;
-		}
-		free_alloca(lookup_name, use_heap);
-	}
-
-	if (retval) {
+	zval *zv;
+	zend_constant *c = zend_hash_find_ptr(EG(zend_constants), name);
+	if (c) {
 		if ((ZEND_CONSTANT_FLAGS(c) & CONST_PERSISTENT)
 		 && (!(ZEND_CONSTANT_FLAGS(c) & CONST_NO_FILE_CACHE)
 		  || !(CG(compiler_options) & ZEND_COMPILE_WITH_FILE_CACHE))) {
@@ -61,12 +43,19 @@ int zend_optimizer_get_persistent_constant(zend_string *name, zval *result, int 
 			if (copy) {
 				Z_TRY_ADDREF_P(result);
 			}
+			return 1;
 		} else {
-			retval = 0;
+			return 0;
 		}
 	}
 
-	return retval;
+	/* Special constants null/true/false can always be substituted. */
+	zv = zend_get_special_const(ZSTR_VAL(name), ZSTR_LEN(name));
+	if (zv) {
+		ZVAL_COPY_VALUE(result, zv);
+		return 1;
+	}
+	return 0;
 }
 
 /* CFG back references management */
@@ -80,13 +69,6 @@ int zend_optimizer_get_persistent_constant(zend_string *name, zval *result, int 
 
 #define VAR_SOURCE(op) Tsource[VAR_NUM(op.var)]
 #define SET_VAR_SOURCE(opline) Tsource[VAR_NUM(opline->result.var)] = opline
-
-#define convert_to_string_safe(v) \
-	if (Z_TYPE_P((v)) == IS_NULL) { \
-		ZVAL_STRINGL((v), "", 0); \
-	} else { \
-		convert_to_string((v)); \
-	}
 
 static void strip_leading_nops(zend_op_array *op_array, zend_basic_block *b)
 {
@@ -197,7 +179,6 @@ static void zend_optimize_block(zend_basic_block *block, zend_op_array *op_array
 			) {
 				znode_op op1 = opline->op1;
 				if (opline->opcode == ZEND_VERIFY_RETURN_TYPE) {
-					zend_optimizer_remove_live_range(op_array, op1.var);
 					COPY_NODE(opline->result, opline->op1);
 					COPY_NODE(opline->op1, src->op1);
 					VAR_SOURCE(op1) = NULL;
@@ -207,7 +188,6 @@ static void zend_optimize_block(zend_basic_block *block, zend_op_array *op_array
 					zval c;
 					ZVAL_COPY(&c, &ZEND_OP1_LITERAL(src));
 					if (zend_optimizer_update_op1_const(op_array, opline, &c)) {
-						zend_optimizer_remove_live_range(op_array, op1.var);
 						VAR_SOURCE(op1) = NULL;
 						literal_dtor(&ZEND_OP1_LITERAL(src));
 						MAKE_NOP(src);
@@ -277,7 +257,6 @@ static void zend_optimize_block(zend_basic_block *block, zend_op_array *op_array
 
 				ZVAL_COPY(&c, &ZEND_OP1_LITERAL(src));
 				if (zend_optimizer_update_op2_const(op_array, opline, &c)) {
-					zend_optimizer_remove_live_range(op_array, op2.var);
 					VAR_SOURCE(op2) = NULL;
 					literal_dtor(&ZEND_OP1_LITERAL(src));
 					MAKE_NOP(src);
@@ -295,7 +274,6 @@ static void zend_optimize_block(zend_basic_block *block, zend_op_array *op_array
 				    src->opcode == ZEND_CAST &&
 				    src->extended_value == IS_STRING) {
 					/* T = CAST(X, String), ECHO(T) => NOP, ECHO(X) */
-					zend_optimizer_remove_live_range(op_array, opline->op1.var);
 					VAR_SOURCE(opline->op1) = NULL;
 					COPY_NODE(opline->op1, src->op1);
 					MAKE_NOP(src);
@@ -315,10 +293,10 @@ static void zend_optimize_block(zend_basic_block *block, zend_op_array *op_array
 					int l, old_len;
 
 					if (Z_TYPE(ZEND_OP1_LITERAL(opline)) != IS_STRING) {
-						convert_to_string_safe(&ZEND_OP1_LITERAL(opline));
+						convert_to_string(&ZEND_OP1_LITERAL(opline));
 					}
 					if (Z_TYPE(ZEND_OP1_LITERAL(last_op)) != IS_STRING) {
-						convert_to_string_safe(&ZEND_OP1_LITERAL(last_op));
+						convert_to_string(&ZEND_OP1_LITERAL(last_op));
 					}
 					old_len = Z_STRLEN(ZEND_OP1_LITERAL(last_op));
 					l = old_len + Z_STRLEN(ZEND_OP1_LITERAL(opline));
@@ -456,8 +434,9 @@ static void zend_optimize_block(zend_basic_block *block, zend_op_array *op_array
 				break;
 
 			case ZEND_CASE:
+			case ZEND_COPY_TMP:
 				if (opline->op1_type & (IS_TMP_VAR|IS_VAR)) {
-					/* CASE variable will be deleted later by FREE, so we can't optimize it */
+					/* Variable will be deleted later by FREE, so we can't optimize it */
 					Tsource[VAR_NUM(opline->op1.var)] = NULL;
 					break;
 				}
@@ -697,10 +676,10 @@ static void zend_optimize_block(zend_basic_block *block, zend_op_array *op_array
 						int l, old_len;
 
 						if (Z_TYPE(ZEND_OP2_LITERAL(opline)) != IS_STRING) {
-							convert_to_string_safe(&ZEND_OP2_LITERAL(opline));
+							convert_to_string(&ZEND_OP2_LITERAL(opline));
 						}
 						if (Z_TYPE(ZEND_OP2_LITERAL(src)) != IS_STRING) {
-							convert_to_string_safe(&ZEND_OP2_LITERAL(src));
+							convert_to_string(&ZEND_OP2_LITERAL(src));
 						}
 
 						VAR_SOURCE(opline->op1) = NULL;
@@ -729,9 +708,9 @@ static void zend_optimize_block(zend_basic_block *block, zend_op_array *op_array
 					src = VAR_SOURCE(opline->op1);
 					if (src &&
 					    src->opcode == ZEND_CAST &&
-					    src->extended_value == IS_STRING) {
+					    src->extended_value == IS_STRING &&
+					    src->op1_type != IS_CONST) {
 						/* convert T1 = CAST(STRING, X), T2 = CONCAT(T1, Y) to T2 = CONCAT(X,Y) */
-						zend_optimizer_remove_live_range(op_array, opline->op1.var);
 						VAR_SOURCE(opline->op1) = NULL;
 						COPY_NODE(opline->op1, src->op1);
 						MAKE_NOP(src);
@@ -742,9 +721,9 @@ static void zend_optimize_block(zend_basic_block *block, zend_op_array *op_array
 					src = VAR_SOURCE(opline->op2);
 					if (src &&
 					    src->opcode == ZEND_CAST &&
-					    src->extended_value == IS_STRING) {
+					    src->extended_value == IS_STRING &&
+					    src->op1_type != IS_CONST) {
 						/* convert T1 = CAST(STRING, X), T2 = CONCAT(Y, T1) to T2 = CONCAT(Y,X) */
-						zend_optimizer_remove_live_range(op_array, opline->op2.var);
 						zend_op *src = VAR_SOURCE(opline->op2);
 						VAR_SOURCE(opline->op2) = NULL;
 						COPY_NODE(opline->op2, src->op1);
@@ -1083,43 +1062,6 @@ static void assemble_code_blocks(zend_cfg *cfg, zend_op_array *op_array, zend_op
 			}
 		}
 		free_alloca(map, use_heap);
-	}
-
-	/* adjust loop jump targets & remove unused live range entries */
-	if (op_array->last_live_range) {
-		int i, j;
-
-		for (i = 0, j = 0; i < op_array->last_live_range; i++) {
-			if (op_array->live_range[i].var == (uint32_t)-1) {
-				/* this live range already removed */
-				continue;
-			}
-			if (!(blocks[cfg->map[op_array->live_range[i].start]].flags & ZEND_BB_REACHABLE)) {
-				ZEND_ASSERT(!(blocks[cfg->map[op_array->live_range[i].end]].flags & ZEND_BB_REACHABLE));
-			} else {
-				uint32_t start_op = blocks[cfg->map[op_array->live_range[i].start]].start;
-				uint32_t end_op = blocks[cfg->map[op_array->live_range[i].end]].start;
-
-				if (start_op == end_op) {
-					/* skip empty live range */
-					continue;
-				}
-				op_array->live_range[i].start = start_op;
-				op_array->live_range[i].end = end_op;
-				if (i != j) {
-					op_array->live_range[j]  = op_array->live_range[i];
-				}
-				j++;
-			}
-		}
-
-		if (i != j) {
-			op_array->last_live_range = j;
-			if (j == 0) {
-				efree(op_array->live_range);
-				op_array->live_range = NULL;
-			}
-		}
 	}
 
 	/* adjust early binding list */
@@ -1943,7 +1885,7 @@ void zend_optimize_cfg(zend_op_array *op_array, zend_optimizer_ctx *ctx)
 
     /* Build CFG */
 	checkpoint = zend_arena_checkpoint(ctx->arena);
-	if (zend_build_cfg(&ctx->arena, op_array, ZEND_CFG_SPLIT_AT_LIVE_RANGES, &cfg) != SUCCESS) {
+	if (zend_build_cfg(&ctx->arena, op_array, 0, &cfg) != SUCCESS) {
 		zend_arena_release(&ctx->arena, checkpoint);
 		return;
 	}

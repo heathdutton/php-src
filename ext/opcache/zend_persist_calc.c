@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -60,7 +60,7 @@ static void zend_hash_persist_calc(HashTable *ht, void (*pPersistElement)(zval *
 	uint32_t idx;
 	Bucket *p;
 
-	if (!(HT_FLAGS(ht) & HASH_FLAG_INITIALIZED) || ht->nNumUsed == 0) {
+	if ((HT_FLAGS(ht) & HASH_FLAG_UNINITIALIZED) || ht->nNumUsed == 0) {
 		return;
 	}
 
@@ -306,6 +306,11 @@ static void zend_persist_property_info_calc(zval *zv)
 		zend_shared_alloc_register_xlat_entry(prop, prop);
 		ADD_SIZE_EX(sizeof(zend_property_info));
 		ADD_INTERNED_STRING(prop->name);
+		if (ZEND_TYPE_IS_NAME(prop->type)) {
+			zend_string *class_name = ZEND_TYPE_NAME(prop->type);
+			ADD_INTERNED_STRING(class_name);
+			prop->type = ZEND_TYPE_ENCODE_CLASS(class_name, ZEND_TYPE_ALLOW_NULL(prop->type));
+		}
 		if (ZCG(accel_directives).save_comments && prop->doc_comment) {
 			ADD_STRING(prop->doc_comment);
 		}
@@ -326,14 +331,34 @@ static void zend_persist_class_constant_calc(zval *zv)
 	}
 }
 
+static void check_property_type_resolution(zend_class_entry *ce) {
+	zend_property_info *prop;
+	if (ce->ce_flags & ZEND_ACC_PROPERTY_TYPES_RESOLVED) {
+		/* Preloading might have computed this already. */
+		return;
+	}
+
+	if (ce->ce_flags & ZEND_ACC_HAS_TYPE_HINTS) {
+		ZEND_HASH_FOREACH_PTR(&ce->properties_info, prop) {
+			if (ZEND_TYPE_IS_NAME(prop->type)) {
+				return;
+			}
+		} ZEND_HASH_FOREACH_END();
+	}
+	ce->ce_flags |= ZEND_ACC_PROPERTY_TYPES_RESOLVED;
+}
+
 static void zend_persist_class_entry_calc(zval *zv)
 {
 	zend_class_entry *ce = Z_PTR_P(zv);
 
 	if (ce->type == ZEND_USER_CLASS) {
+		check_property_type_resolution(ce);
+
 		ZCG(is_immutable_class) =
 			(ce->ce_flags & ZEND_ACC_LINKED) &&
 			(ce->ce_flags & ZEND_ACC_CONSTANTS_UPDATED) &&
+			(ce->ce_flags & ZEND_ACC_PROPERTY_TYPES_RESOLVED) &&
 			!ZCG(current_persistent_script)->corrupted;
 
 		ADD_SIZE_EX(sizeof(zend_class_entry));
@@ -370,6 +395,10 @@ static void zend_persist_class_entry_calc(zval *zv)
 		}
 
 		zend_hash_persist_calc(&ce->properties_info, zend_persist_property_info_calc);
+
+		if (ce->properties_info_table) {
+			ADD_SIZE_EX(sizeof(zend_property_info *) * ce->default_properties_count);
+		}
 
 		if (ce->num_interfaces) {
 			uint32_t i;

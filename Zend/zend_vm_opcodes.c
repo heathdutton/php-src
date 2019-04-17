@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -22,7 +22,7 @@
 #include <zend.h>
 #include <zend_vm_opcodes.h>
 
-static const char *zend_vm_opcodes_names[199] = {
+static const char *zend_vm_opcodes_names[208] = {
 	"ZEND_NOP",
 	"ZEND_ADD",
 	"ZEND_SUB",
@@ -222,9 +222,18 @@ static const char *zend_vm_opcodes_names[199] = {
 	"ZEND_UNSET_CV",
 	"ZEND_ISSET_ISEMPTY_CV",
 	"ZEND_FETCH_LIST_W",
+	"ZEND_ARRAY_KEY_EXISTS",
+	"ZEND_ASSIGN_OBJ_REF",
+	"ZEND_ASSIGN_STATIC_PROP",
+	"ZEND_ASSIGN_STATIC_PROP_REF",
+	"ZEND_PRE_INC_STATIC_PROP",
+	"ZEND_PRE_DEC_STATIC_PROP",
+	"ZEND_POST_INC_STATIC_PROP",
+	"ZEND_POST_DEC_STATIC_PROP",
+	"ZEND_COPY_TMP",
 };
 
-static uint32_t zend_vm_opcodes_flags[199] = {
+static uint32_t zend_vm_opcodes_flags[208] = {
 	0x00000000,
 	0x00000707,
 	0x00000707,
@@ -248,17 +257,17 @@ static uint32_t zend_vm_opcodes_flags[199] = {
 	0x00000707,
 	0x07000003,
 	0x00000003,
-	0x04046751,
-	0x04046751,
-	0x04046751,
-	0x04046751,
-	0x04046751,
-	0x04046751,
-	0x04046751,
-	0x04046751,
-	0x04046751,
-	0x04046751,
-	0x04046751,
+	0x04046753,
+	0x04046753,
+	0x04046753,
+	0x04046753,
+	0x04046753,
+	0x04046753,
+	0x04046753,
+	0x04046753,
+	0x04046753,
+	0x04046753,
+	0x04046753,
 	0x00000001,
 	0x00000001,
 	0x00000001,
@@ -310,7 +319,7 @@ static uint32_t zend_vm_opcodes_flags[199] = {
 	0x00040757,
 	0x00010107,
 	0x00006701,
-	0x00040751,
+	0x00640751,
 	0x00010107,
 	0x00006701,
 	0x00040751,
@@ -319,7 +328,7 @@ static uint32_t zend_vm_opcodes_flags[199] = {
 	0x00040757,
 	0x00010107,
 	0x00006703,
-	0x00040753,
+	0x00240753,
 	0x00010107,
 	0x00000701,
 	0x00040751,
@@ -392,20 +401,20 @@ static uint32_t zend_vm_opcodes_flags[199] = {
 	0x0000a110,
 	0x00000000,
 	0x00000707,
-	0x04046751,
+	0x04046753,
 	0x00040301,
 	0x00002007,
 	0x00000707,
 	0x03000000,
 	0x03000303,
 	0x00047307,
+	0x00647307,
 	0x00047307,
 	0x00047307,
+	0x00247307,
 	0x00047307,
 	0x00047307,
-	0x00047307,
-	0x00047307,
-	0x00067307,
+	0x00067000,
 	0x00040373,
 	0x00100101,
 	0x00100101,
@@ -424,6 +433,15 @@ static uint32_t zend_vm_opcodes_flags[199] = {
 	0x00000101,
 	0x00020101,
 	0x00000701,
+	0x00000707,
+	0x0b040751,
+	0x00040000,
+	0x0b040000,
+	0x00040307,
+	0x00040307,
+	0x00040307,
+	0x00040307,
+	0x00000105,
 };
 
 ZEND_API const char* ZEND_FASTCALL zend_get_opcode_name(zend_uchar opcode) {

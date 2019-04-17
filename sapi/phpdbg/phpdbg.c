@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -671,11 +671,11 @@ static PHP_FUNCTION(phpdbg_end_oplog)
 
 	{
 		zend_string *last_file = NULL;
-		HashTable *file_ht;
+		HashTable *file_ht = NULL;
 		zend_string *last_function = (void *)~(uintptr_t)0;
 		zend_class_entry *last_scope = NULL;
 
-		HashTable *insert_ht;
+		HashTable *insert_ht = NULL;
 		zend_long insert_idx;
 
 		do {
@@ -717,6 +717,7 @@ static PHP_FUNCTION(phpdbg_end_oplog)
 				insert_idx = cur->op->lineno;
 			}
 
+			ZEND_ASSERT(insert_ht && file_ht);
 			{
 				zval *num = zend_hash_index_find(insert_ht, insert_idx);
 				if (!num) {
@@ -1416,9 +1417,10 @@ int main(int argc, char **argv) /* {{{ */
 
 phpdbg_main:
 #ifdef ZTS
-	tsrm_startup(1, 1, 0, NULL);
-	(void)ts_resource(0);
+	php_tsrm_startup();
+# ifdef PHP_WIN32
 	ZEND_TSRMLS_CACHE_UPDATE();
+# endif
 #endif
 
 	zend_signal_startup();
@@ -1664,7 +1666,8 @@ phpdbg_main:
 
 	if (settings > (zend_phpdbg_globals *) 0x2) {
 #ifdef ZTS
-		*((zend_phpdbg_globals *) (*((void ***) TSRMLS_CACHE))[TSRM_UNSHUFFLE_RSRC_ID(phpdbg_globals_id)]) = *settings;
+		zend_phpdbg_globals *ptr = TSRMG_BULK_STATIC(phpdbg_globals_id, zend_phpdbg_globals *);
+		*ptr = *settings;
 #else
 		phpdbg_globals = *settings;
 #endif
@@ -1690,7 +1693,7 @@ phpdbg_main:
 				phpdbg_do_help_cmd(exec);
 			} else if (show_version) {
 				phpdbg_out(
-					"phpdbg %s (built: %s %s)\nPHP %s, Copyright (c) 1997-2018 The PHP Group\n%s",
+					"phpdbg %s (built: %s %s)\nPHP %s, Copyright (c) The PHP Group\n%s",
 					PHPDBG_VERSION,
 					__DATE__,
 					__TIME__,

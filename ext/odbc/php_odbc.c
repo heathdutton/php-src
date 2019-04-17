@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -1876,13 +1876,13 @@ PHP_FUNCTION(odbc_fetch_into)
 #endif /* HAVE_SQL_EXTENDED_FETCH */
 
 #ifdef HAVE_SQL_EXTENDED_FETCH
-	if (zend_parse_parameters(ZEND_NUM_ARGS(), "rz/|l", &pv_res, &pv_res_arr, &pv_row) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "rz|l", &pv_res, &pv_res_arr, &pv_row) == FAILURE) {
 		return;
 	}
 
 	rownum = pv_row;
 #else
-	if (zend_parse_parameters(ZEND_NUM_ARGS(), "rz/", &pv_res, &pv_res_arr) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "rz", &pv_res, &pv_res_arr) == FAILURE) {
 		return;
 	}
 #endif /* HAVE_SQL_EXTENDED_FETCH */
@@ -1896,8 +1896,9 @@ PHP_FUNCTION(odbc_fetch_into)
 		RETURN_FALSE;
 	}
 
-	if (Z_TYPE_P(pv_res_arr) != IS_ARRAY) {
-		array_init(pv_res_arr);
+	pv_res_arr = zend_try_array_init(pv_res_arr);
+	if (!pv_res_arr) {
+		return;
 	}
 
 #ifdef HAVE_SQL_EXTENDED_FETCH
@@ -3853,12 +3854,3 @@ PHP_FUNCTION(odbc_tableprivileges)
 #endif /* HAVE_DBMAKER */
 
 #endif /* HAVE_UODBC */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

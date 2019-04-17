@@ -1,14 +1,14 @@
 dnl config.m4 for extension intl
 
-dnl ##########################################################################
-dnl Initialize the extension
-PHP_ARG_ENABLE(intl, whether to enable internationalization support,
-[  --enable-intl           Enable internationalization support])
+PHP_ARG_ENABLE([intl],
+  [whether to enable internationalization support],
+  [AS_HELP_STRING([--enable-intl],
+    [Enable internationalization support])])
 
 if test "$PHP_INTL" != "no"; then
   PHP_SETUP_ICU(INTL_SHARED_LIBADD)
   PHP_SUBST(INTL_SHARED_LIBADD)
-  INTL_COMMON_FLAGS="$ICU_INCS $ICU_CFLAGS -Wno-write-strings -D__STDC_LIMIT_MACROS -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1"
+  INTL_COMMON_FLAGS="$ICU_CFLAGS -Wno-write-strings -D__STDC_LIMIT_MACROS -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1"
   PHP_NEW_EXTENSION(intl, php_intl.c \
     intl_error.c \
     intl_convert.c \

@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -57,11 +57,6 @@ MBSTRING_API SAPI_TREAT_DATA_FUNC(mbstr_treat_data)
 	int free_buffer=0;
 	const mbfl_encoding *detected;
 	php_mb_encoding_handler_info_t info;
-
-	if (arg != PARSE_STRING) {
-		char *value = MBSTRG(internal_encoding_name);
-		_php_mb_ini_mbstring_internal_encoding_set(value, value ? strlen(value): 0);
-	}
 
 	if (!MBSTRG(encoding_translation)) {
 		php_default_treat_data(arg, str, destArray);
@@ -386,12 +381,3 @@ SAPI_POST_HANDLER_FUNC(php_mb_post_handler)
 /* }}} */
 
 #endif /* HAVE_MBSTRING */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: fdm=marker
- * vim: noet sw=4 ts=4
- */

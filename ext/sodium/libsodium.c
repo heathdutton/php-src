@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -387,9 +387,8 @@ static void sodium_remove_param_values_from_backtrace(zend_object *obj) {
 		ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(trace), frame) {
 			if (Z_TYPE_P(frame) == IS_ARRAY) {
 				zval *args = zend_hash_str_find(Z_ARRVAL_P(frame), "args", sizeof("args")-1);
-				if (args && Z_TYPE_P(frame) == IS_ARRAY) {
-					zend_hash_clean(Z_ARRVAL_P(args));
-				}
+				zval_ptr_dtor(args);
+				ZVAL_EMPTY_ARRAY(args);
 			}
 		} ZEND_HASH_FOREACH_END();
 	}
@@ -1678,7 +1677,8 @@ PHP_FUNCTION(sodium_crypto_sign_detached)
 		zend_throw_exception(sodium_exception_ce, "signature has a bogus size", 0);
 		return;
 	}
-	ZEND_ASSERT(ZSTR_VAL(signature)[signature_real_len] == 0);
+	PHP_SODIUM_ZSTR_TRUNCATE(signature, (size_t) signature_real_len);
+	ZSTR_VAL(signature)[signature_real_len] = 0;
 
 	RETURN_NEW_STR(signature);
 }
@@ -3718,12 +3718,3 @@ PHP_FUNCTION(sodium_crypto_secretstream_xchacha20poly1305_rekey)
 	crypto_secretstream_xchacha20poly1305_rekey((void *) state);
 }
 #endif
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 tw=78 fdm=marker
- * vim<600: sw=4 ts=4 tw=78
- */

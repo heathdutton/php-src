@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -22,6 +22,8 @@
 #include "codepage.h"
 #include <bcrypt.h>
 #include <lmcons.h>
+#include <imagehlp.h>
+
 
 PHP_WINUTIL_API char *php_win32_error_to_msg(HRESULT error)
 {/*{{{*/
@@ -398,6 +400,8 @@ PHP_WINUTIL_API int php_win32_code_to_errno(unsigned long w32Err)
         /* 1314 */   ,  {   ERROR_PRIVILEGE_NOT_HELD        ,   EACCES          }
         /* 1816 */  ,   {   ERROR_NOT_ENOUGH_QUOTA          ,   ENOMEM          }
 					,   {   ERROR_ABANDONED_WAIT_0          ,   EIO }
+		/* 1464 */	,	{	ERROR_SYMLINK_NOT_SUPPORTED		,	EINVAL			}
+		/* 4390 */	,	{	ERROR_NOT_A_REPARSE_POINT		,	EINVAL			}
     };
 
     for(i = 0; i < sizeof(errmap)/sizeof(struct code_to_errno_map); ++i)
@@ -434,11 +438,74 @@ PHP_WINUTIL_API char *php_win32_get_username(void)
 	return uname;
 }/*}}}*/
 
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */
+PHP_WINUTIL_API BOOL php_win32_image_compatible(const char *name, const char *path, char **err)
+{/*{{{*/
+	PLOADED_IMAGE img = ImageLoad(name, NULL);
+
+	if (!img) {
+		DWORD _err = GetLastError();
+		char *err_txt = php_win32_error_to_msg(_err);
+		spprintf(err, 0, "Failed to load %s, %s", name, err_txt);
+		free(err_txt);
+		return FALSE;
+	}
+	
+	DWORD major = img->FileHeader->OptionalHeader.MajorLinkerVersion;
+	DWORD minor = img->FileHeader->OptionalHeader.MinorLinkerVersion;
+
+#if PHP_LINKER_MAJOR == 14
+	/* VS 2015, 2017 and 2019 are binary compatible, but only forward compatible.
+		It should be fine, if we load a module linked with an older one into
+		the core linked with the newer one, but not the otherway round.
+		Otherwise, if the linker major version is not same, it is an error, as
+		per the current knowledge.
+		
+		This check is to be extended as new VS versions come out. */
+	if (14 == major && PHP_LINKER_MINOR < minor || PHP_LINKER_MAJOR != major)
+#else
+	if (PHP_LINKER_MAJOR != major)
+#endif
+	{
+		spprintf(err, 0, "Can't load module '%s' as it's linked with %u.%u, but the core is linked with %d.%d", name, major, minor, PHP_LINKER_MAJOR, PHP_LINKER_MINOR);
+		ImageUnload(img);
+		return FALSE;
+	}
+
+	ImageUnload(img);
+
+	return TRUE;
+}/*}}}*/
+
+/* Expect a CRT name DLL. */
+PHP_WINUTIL_API BOOL php_win32_crt_compatible(const char *name, char **err)
+{/*{{{*/
+	PLOADED_IMAGE img = ImageLoad(name, NULL);
+
+	if (!img) {
+		DWORD _err = GetLastError();
+		char *err_txt = php_win32_error_to_msg(_err);
+		spprintf(err, 0, "Failed to load %s, %s", name, err_txt);
+		free(err_txt);
+		return FALSE;
+	}
+	
+	DWORD major = img->FileHeader->OptionalHeader.MajorLinkerVersion;
+	DWORD minor = img->FileHeader->OptionalHeader.MinorLinkerVersion;
+
+#if PHP_LINKER_MAJOR == 14
+	DWORD core_minor = (DWORD)(PHP_LINKER_MINOR/10);
+	DWORD comp_minor = (DWORD)(minor/10);
+	if (14 == major && core_minor > comp_minor || PHP_LINKER_MAJOR != major)
+#else
+	if (PHP_LINKER_MAJOR != major)
+#endif
+	{
+		spprintf(err, 0, "'%s' %u.%u is not compatible with this PHP build linked with %d.%d", name, major, minor, PHP_LINKER_MAJOR, PHP_LINKER_MINOR);
+		ImageUnload(img);
+		return FALSE;
+	}
+	ImageUnload(img);
+
+	return TRUE;
+}/*}}}*/
+

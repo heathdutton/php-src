@@ -26,7 +26,7 @@ echo "\n*** Testing is_bool() on non boolean values ***\n";
 
 // get a resource type variable
 $fp = fopen (__FILE__, "r");
-$dfp = opendir ( dirname(__FILE__) );
+$dfp = opendir ( __DIR__ );
 
 // unset variable
 $unset_bool1 = true;
@@ -126,13 +126,6 @@ foreach ($not_bool_types as $type ) {
   echo "-- Iteration $loop_counter --\n"; $loop_counter++;
   var_dump( is_bool($type) );
 }
-
-echo "\n*** Testing error conditions ***\n";
-//Zero argument
-var_dump( is_bool() );
-
-//arguments more than expected
-var_dump( is_bool(TRUE, FALSE) );
 
 echo "Done\n";
 
@@ -282,13 +275,5 @@ bool(false)
 -- Iteration 64 --
 bool(false)
 -- Iteration 65 --
-bool(false)
-
-*** Testing error conditions ***
-
-Warning: is_bool() expects exactly 1 parameter, 0 given in %s on line %d
-bool(false)
-
-Warning: is_bool() expects exactly 1 parameter, 2 given in %s on line %d
 bool(false)
 Done

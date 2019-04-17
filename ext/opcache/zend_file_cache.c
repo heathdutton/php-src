@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend OPcache                                                         |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -26,8 +26,6 @@
 #ifdef ZEND_WIN32
 #include "ext/standard/md5.h"
 #endif
-
-#ifdef HAVE_OPCACHE_FILE_CACHE
 
 #include "ZendAccelerator.h"
 #include "zend_file_cache.h"
@@ -272,7 +270,7 @@ static void zend_file_cache_serialize_hash(HashTable                *ht,
 {
 	Bucket *p, *end;
 
-	if (!(HT_FLAGS(ht) & HASH_FLAG_INITIALIZED)) {
+	if (HT_FLAGS(ht) & HASH_FLAG_UNINITIALIZED) {
 		ht->arData = NULL;
 		return;
 	}
@@ -577,6 +575,17 @@ static void zend_file_cache_serialize_prop_info(zval                     *zv,
 				SERIALIZE_STR(prop->doc_comment);
 			}
 		}
+		if (prop->type) {
+			if (ZEND_TYPE_IS_NAME(prop->type)) {
+				zend_string *name = ZEND_TYPE_NAME(prop->type);
+				SERIALIZE_STR(name);
+				prop->type = ZEND_TYPE_ENCODE_CLASS(name, ZEND_TYPE_ALLOW_NULL(prop->type));
+			} else if (ZEND_TYPE_IS_CE(prop->type)) {
+				zend_class_entry *ce = ZEND_TYPE_CE(prop->type);
+				SERIALIZE_PTR(ce);
+				prop->type = ZEND_TYPE_ENCODE_CE(ce, ZEND_TYPE_ALLOW_NULL(prop->type));
+			}
+		}
 	}
 }
 
@@ -660,6 +669,19 @@ static void zend_file_cache_serialize_class(zval                     *zv,
 	SERIALIZE_STR(ce->info.user.doc_comment);
 	zend_file_cache_serialize_hash(&ce->properties_info, script, info, buf, zend_file_cache_serialize_prop_info);
 
+	if (ce->properties_info_table) {
+		uint32_t i;
+		zend_property_info **table;
+
+		SERIALIZE_PTR(ce->properties_info_table);
+		table = ce->properties_info_table;
+		UNSERIALIZE_PTR(table);
+
+		for (i = 0; i < ce->default_properties_count; i++) {
+			SERIALIZE_PTR(table[i]);
+		}
+	}
+
 	if (ce->num_interfaces) {
 		uint32_t i;
 		zend_class_name *interface_names;
@@ -717,7 +739,7 @@ static void zend_file_cache_serialize_class(zval                     *zv,
 
 		if (ce->trait_precedences) {
 			zend_trait_precedence **p, *q;
-			int j;
+			uint32_t j;
 
 			SERIALIZE_PTR(ce->trait_precedences);
 			p = ce->trait_precedences;
@@ -839,7 +861,21 @@ static char *zend_file_cache_get_bin_file_path(zend_string *script_path)
 	filename[len] = '\\';
 
 	memcpy(filename + len + 1, ZCG(system_id), 32);
-	if (ZSTR_LEN(script_path) >= 2 && ':' == ZSTR_VAL(script_path)[1]) {
+
+	if (ZSTR_LEN(script_path) >= 7 && ':' == ZSTR_VAL(script_path)[4] && '/' == ZSTR_VAL(script_path)[5]  && '/' == ZSTR_VAL(script_path)[6]) {
+		/* phar:// or file:// */
+		*(filename + len + 33) = '\\';
+		memcpy(filename + len + 34, ZSTR_VAL(script_path), 4);
+		if (ZSTR_LEN(script_path) - 7 >= 2 && ':' == ZSTR_VAL(script_path)[8]) {
+			*(filename + len + 38) = '\\';
+			*(filename + len + 39) = ZSTR_VAL(script_path)[7];
+			memcpy(filename + len + 40, ZSTR_VAL(script_path) + 9, ZSTR_LEN(script_path) - 9);
+			memcpy(filename + len + 40 + ZSTR_LEN(script_path) - 9, SUFFIX, sizeof(SUFFIX));
+		} else {
+			memcpy(filename + len + 38, ZSTR_VAL(script_path) + 7, ZSTR_LEN(script_path) - 7);
+			memcpy(filename + len + 38 + ZSTR_LEN(script_path) - 7, SUFFIX, sizeof(SUFFIX));
+		}
+	} else if (ZSTR_LEN(script_path) >= 2 && ':' == ZSTR_VAL(script_path)[1]) {
 		/* local fs */
 		*(filename + len + 33) = '\\';
 		*(filename + len + 34) = ZSTR_VAL(script_path)[0];
@@ -865,6 +901,13 @@ int zend_file_cache_script_store(zend_persistent_script *script, int in_shm)
 	struct iovec vec[3];
 #endif
 	void *mem, *buf;
+
+#ifdef HAVE_JIT
+	/* FIXME: dump jited codes out to file cache? */
+	if (ZCG(accel_directives).jit) {
+		return FAILURE;
+	}
+#endif
 
 	filename = zend_file_cache_get_bin_file_path(script->script.filename);
 
@@ -965,7 +1008,7 @@ static void zend_file_cache_unserialize_hash(HashTable               *ht,
 	Bucket *p, *end;
 
 	ht->pDestructor = dtor;
-	if (!(HT_FLAGS(ht) & HASH_FLAG_INITIALIZED)) {
+	if (HT_FLAGS(ht) & HASH_FLAG_UNINITIALIZED) {
 		if (EXPECTED(!file_cache_only)) {
 			HT_SET_DATA_ADDR(ht, &ZCSG(uninitialized_bucket));
 		} else {
@@ -1246,6 +1289,17 @@ static void zend_file_cache_unserialize_prop_info(zval                    *zv,
 				UNSERIALIZE_STR(prop->doc_comment);
 			}
 		}
+		if (prop->type) {
+			if (ZEND_TYPE_IS_NAME(prop->type)) {
+				zend_string *name = ZEND_TYPE_NAME(prop->type);
+				UNSERIALIZE_STR(name);
+				prop->type = ZEND_TYPE_ENCODE_CLASS(name, ZEND_TYPE_ALLOW_NULL(prop->type));
+			} else if (ZEND_TYPE_IS_CE(prop->type)) {
+				zend_class_entry *ce = ZEND_TYPE_CE(prop->type);
+				UNSERIALIZE_PTR(ce);
+				prop->type = ZEND_TYPE_ENCODE_CE(ce, ZEND_TYPE_ALLOW_NULL(prop->type));
+			}
+		}
 	}
 }
 
@@ -1325,6 +1379,15 @@ static void zend_file_cache_unserialize_class(zval                    *zv,
 	zend_file_cache_unserialize_hash(&ce->properties_info,
 			script, buf, zend_file_cache_unserialize_prop_info, NULL);
 
+	if (ce->properties_info_table) {
+		uint32_t i;
+		UNSERIALIZE_PTR(ce->properties_info_table);
+
+		for (i = 0; i < ce->default_properties_count; i++) {
+			UNSERIALIZE_PTR(ce->properties_info_table[i]);
+		}
+	}
+
 	if (ce->num_interfaces) {
 		uint32_t i;
 
@@ -1373,7 +1436,7 @@ static void zend_file_cache_unserialize_class(zval                    *zv,
 
 		if (ce->trait_precedences) {
 			zend_trait_precedence **p, *q;
-			int j;
+			uint32_t j;
 
 			UNSERIALIZE_PTR(ce->trait_precedences);
 			p = ce->trait_precedences;
@@ -1647,5 +1710,3 @@ void zend_file_cache_invalidate(zend_string *full_path)
 	zend_file_cache_unlink(filename);
 	efree(filename);
 }
-
-#endif /* HAVE_OPCACHE_FILE_CACHE */

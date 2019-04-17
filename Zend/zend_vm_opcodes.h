@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -53,6 +53,8 @@
 #define ZEND_VM_EXT_CACHE_SLOT   0x00040000
 #define ZEND_VM_EXT_ARRAY_INIT   0x00080000
 #define ZEND_VM_EXT_REF          0x00100000
+#define ZEND_VM_EXT_FETCH_REF    0x00200000
+#define ZEND_VM_EXT_DIM_OBJ_WRITE 0x00400000
 #define ZEND_VM_EXT_MASK         0x0f000000
 #define ZEND_VM_EXT_NUM          0x01000000
 #define ZEND_VM_EXT_LAST_CATCH   0x02000000
@@ -269,7 +271,16 @@ END_EXTERN_C()
 #define ZEND_UNSET_CV                        196
 #define ZEND_ISSET_ISEMPTY_CV                197
 #define ZEND_FETCH_LIST_W                    198
+#define ZEND_ARRAY_KEY_EXISTS                199
+#define ZEND_ASSIGN_OBJ_REF                  200
+#define ZEND_ASSIGN_STATIC_PROP              201
+#define ZEND_ASSIGN_STATIC_PROP_REF          202
+#define ZEND_PRE_INC_STATIC_PROP             203
+#define ZEND_PRE_DEC_STATIC_PROP             204
+#define ZEND_POST_INC_STATIC_PROP            205
+#define ZEND_POST_DEC_STATIC_PROP            206
+#define ZEND_COPY_TMP                        207
 
-#define ZEND_VM_LAST_OPCODE                  198
+#define ZEND_VM_LAST_OPCODE                  207
 
 #endif

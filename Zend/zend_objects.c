@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -24,6 +24,7 @@
 #include "zend_API.h"
 #include "zend_interfaces.h"
 #include "zend_exceptions.h"
+#include "zend_weakrefs.h"
 
 static zend_always_inline void _zend_object_std_init(zend_object *object, zend_class_entry *ce)
 {
@@ -57,10 +58,20 @@ ZEND_API void zend_object_std_dtor(zend_object *object)
 	if (EXPECTED(object->ce->default_properties_count)) {
 		end = p + object->ce->default_properties_count;
 		do {
-			i_zval_ptr_dtor(p);
+			if (Z_REFCOUNTED_P(p)) {
+				if (UNEXPECTED(Z_ISREF_P(p)) &&
+						(ZEND_DEBUG || ZEND_REF_HAS_TYPE_SOURCES(Z_REF_P(p)))) {
+					zend_property_info *prop_info = zend_get_property_info_for_slot(object, p);
+					if (prop_info->type) {
+						ZEND_REF_DEL_TYPE_SOURCE(Z_REF_P(p), prop_info);
+					}
+				}
+				i_zval_ptr_dtor(p);
+			}
 			p++;
 		} while (p != end);
 	}
+
 	if (UNEXPECTED(object->ce->ce_flags & ZEND_ACC_USE_GUARDS)) {
 		if (EXPECTED(Z_TYPE_P(p) == IS_STRING)) {
 			zval_ptr_dtor_str(p);
@@ -72,6 +83,10 @@ ZEND_API void zend_object_std_dtor(zend_object *object)
 			zend_hash_destroy(guards);
 			FREE_HASHTABLE(guards);
 		}
+	}
+
+	if (UNEXPECTED(GC_FLAGS(object) & IS_OBJ_WEAKLY_REFERENCED)) {
+		zend_weakrefs_notify(object);
 	}
 }
 
@@ -195,6 +210,13 @@ ZEND_API void ZEND_FASTCALL zend_objects_clone_members(zend_object *new_object, 
 			i_zval_ptr_dtor(dst);
 			ZVAL_COPY_VALUE(dst, src);
 			zval_add_ref(dst);
+			if (UNEXPECTED(Z_ISREF_P(dst)) &&
+					(ZEND_DEBUG || ZEND_REF_HAS_TYPE_SOURCES(Z_REF_P(dst)))) {
+				zend_property_info *prop_info = zend_get_property_info_for_slot(new_object, dst);
+				if (prop_info->type) {
+					ZEND_REF_ADD_TYPE_SOURCE(Z_REF_P(dst), prop_info);
+				}
+			}
 			src++;
 			dst++;
 		} while (src != end);
@@ -267,14 +289,12 @@ ZEND_API void ZEND_FASTCALL zend_objects_clone_members(zend_object *new_object, 
 	}
 }
 
-ZEND_API zend_object *zend_objects_clone_obj(zval *zobject)
+ZEND_API zend_object *zend_objects_clone_obj(zend_object *old_object)
 {
-	zend_object *old_object;
 	zend_object *new_object;
 
 	/* assume that create isn't overwritten, so when clone depends on the
 	 * overwritten one then it must itself be overwritten */
-	old_object = Z_OBJ_P(zobject);
 	new_object = zend_objects_new(old_object->ce);
 
 	/* zend_objects_clone_members() expect the properties to be initialized. */
@@ -291,13 +311,3 @@ ZEND_API zend_object *zend_objects_clone_obj(zval *zobject)
 
 	return new_object;
 }
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

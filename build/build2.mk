@@ -1,7 +1,7 @@
 #  +----------------------------------------------------------------------+
 #  | PHP Version 7                                                        |
 #  +----------------------------------------------------------------------+
-#  | Copyright (c) 1997-2018 The PHP Group                                |
+#  | Copyright (c) The PHP Group                                          |
 #  +----------------------------------------------------------------------+
 #  | This source file is subject to version 3.01 of the PHP license,      |
 #  | that is bundled with this package in the file LICENSE, and is        |
@@ -14,15 +14,9 @@
 #  | Author: Sascha Schumann <sascha@schumann.cx>                         |
 #  +----------------------------------------------------------------------+
 
-include generated_lists
-
-TOUCH_FILES = mkinstalldirs install-sh missing
-
-LT_TARGETS = ltmain.sh config.guess config.sub
-
 config_h_in = main/php_config.h.in
 
-targets = $(TOUCH_FILES) configure $(config_h_in)
+targets = configure $(config_h_in)
 
 PHP_AUTOCONF ?= 'autoconf'
 PHP_AUTOHEADER ?= 'autoheader'
@@ -32,20 +26,19 @@ SUPPRESS_WARNINGS ?= 2>&1 | (egrep -v '(AC_PROG_CXXCPP was called before AC_PROG
 all: $(targets)
 
 $(config_h_in): configure
-# explicitly remove target since autoheader does not seem to work
-# correctly otherwise (timestamps are not updated)
+# Explicitly remove target since autoheader does not seem to work correctly
+# otherwise (timestamps are not updated). Also disable PACKAGE_* symbols in the
+# generated php_config.h.in template.
 	@echo rebuilding $@
 	@rm -f $@
 	$(PHP_AUTOHEADER) $(SUPPRESS_WARNINGS)
-
-$(TOUCH_FILES):
-	touch $(TOUCH_FILES)
+	sed -e 's/^#undef PACKAGE_[^ ]*/\/\* & \*\//g' < $@ > $@.tmp && mv $@.tmp $@
 
 aclocal.m4: configure.ac acinclude.m4
 	@echo rebuilding $@
 	cat acinclude.m4 ./build/libtool.m4 > $@
 
-configure: aclocal.m4 configure.ac $(config_m4_files)
+configure: aclocal.m4 configure.ac $(M4_FILES)
 	@echo rebuilding $@
 	@rm -f $@
 	$(PHP_AUTOCONF) -f $(SUPPRESS_WARNINGS)

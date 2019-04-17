@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -212,7 +212,8 @@ typedef struct _virtual_cwd_globals {
 
 #ifdef ZTS
 extern ts_rsrc_id cwd_globals_id;
-# define CWDG(v) ZEND_TSRMG(cwd_globals_id, virtual_cwd_globals *, v)
+extern size_t cwd_globals_offset;
+# define CWDG(v) ZEND_TSRMG_FAST(cwd_globals_offset, virtual_cwd_globals *, v)
 #else
 extern virtual_cwd_globals cwd_globals;
 # define CWDG(v) (cwd_globals.v)
@@ -365,13 +366,3 @@ extern void virtual_cwd_main_cwd_init(uint8_t);
 #endif
 
 #endif /* VIRTUAL_CWD_H */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

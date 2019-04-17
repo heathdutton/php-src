@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -67,11 +67,7 @@ php_oci_descriptor *php_oci_lob_create (php_oci_connection *connection, zend_lon
 	descriptor = ecalloc(1, sizeof(php_oci_descriptor));
 	descriptor->type = (ub4) type;
 	descriptor->connection = connection;
-#if PHP_VERSION_ID < 70300
-	++GC_REFCOUNT(descriptor->connection->id);
-#else
 	GC_ADDREF(descriptor->connection->id);
-#endif
 
 	PHP_OCI_CALL_RETURN(errstatus, OCIDescriptorAlloc, (connection->env, (dvoid*)&(descriptor->descriptor), descriptor->type, (size_t) 0, (dvoid **) 0));
 
@@ -953,12 +949,3 @@ int php_oci_lob_write_tmp (php_oci_descriptor *descriptor, zend_long type, char 
 /* }}} */
 
 #endif /* HAVE_OCI8 */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

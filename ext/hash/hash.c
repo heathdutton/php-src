@@ -2,7 +2,7 @@
   +----------------------------------------------------------------------+
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2018 The PHP Group                                |
+  | Copyright (c) The PHP Group                                          |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -40,10 +40,10 @@ struct mhash_bc_entry {
 	int value;
 };
 
-#define MHASH_NUM_ALGOS 34
+#define MHASH_NUM_ALGOS 35
 
 static struct mhash_bc_entry mhash_to_hash[MHASH_NUM_ALGOS] = {
-	{"CRC32", "crc32", 0},
+	{"CRC32", "crc32", 0}, /* used by bzip */
 	{"MD5", "md5", 1},
 	{"SHA1", "sha1", 2},
 	{"HAVAL256", "haval256,3", 3},
@@ -52,7 +52,7 @@ static struct mhash_bc_entry mhash_to_hash[MHASH_NUM_ALGOS] = {
 	{NULL, NULL, 6},
 	{"TIGER", "tiger192,3", 7},
 	{"GOST", "gost", 8},
-	{"CRC32B", "crc32b", 9},
+	{"CRC32B", "crc32b", 9}, /* used by ethernet (IEEE 802.3), gzip, zip, png, etc */
 	{"HAVAL224", "haval224,3", 10},
 	{"HAVAL192", "haval192,3", 11},
 	{"HAVAL160", "haval160,3", 12},
@@ -77,6 +77,7 @@ static struct mhash_bc_entry mhash_to_hash[MHASH_NUM_ALGOS] = {
 	{"FNV164", "fnv164", 31},
 	{"FNV1A64", "fnv1a64", 32},
 	{"JOAAT", "joaat", 33},
+	{"CRC32C", "crc32c", 34}, /* Castagnoli's CRC, used by iSCSI, SCTP, Btrfs, ext4, etc */
 };
 #endif
 
@@ -195,14 +196,14 @@ PHP_FUNCTION(hash_file)
 /* }}} */
 
 static inline void php_hash_string_xor_char(unsigned char *out, const unsigned char *in, const unsigned char xor_with, const size_t length) {
-	int i;
+	size_t i;
 	for (i=0; i < length; i++) {
 		out[i] = in[i] ^ xor_with;
 	}
 }
 
 static inline void php_hash_string_xor(unsigned char *out, const unsigned char *in, const unsigned char *xor_with, const size_t length) {
-	int i;
+	size_t i;
 	for (i=0; i < length; i++) {
 		out[i] = in[i] ^ xor_with[i];
 	}
@@ -329,39 +330,41 @@ PHP_FUNCTION(hash_hmac_file)
 }
 /* }}} */
 
-static void php_hashcontext_ctor(INTERNAL_FUNCTION_PARAMETERS, zval *objval) {
+/* {{{ proto HashContext hash_init(string algo[, int options, string key])
+Initialize a hashing context */
+PHP_FUNCTION(hash_init)
+{
 	zend_string *algo, *key = NULL;
 	zend_long options = 0;
 	int argc = ZEND_NUM_ARGS();
 	void *context;
 	const php_hash_ops *ops;
-	php_hashcontext_object *hash = php_hashcontext_from_object(Z_OBJ_P(objval));
+	php_hashcontext_object *hash;
 
 	if (zend_parse_parameters(argc, "S|lS", &algo, &options, &key) == FAILURE) {
-		zval_ptr_dtor(return_value);
 		RETURN_NULL();
 	}
 
 	ops = php_hash_fetch_ops(ZSTR_VAL(algo), ZSTR_LEN(algo));
 	if (!ops) {
 		php_error_docref(NULL, E_WARNING, "Unknown hashing algorithm: %s", ZSTR_VAL(algo));
-		zval_ptr_dtor(return_value);
 		RETURN_FALSE;
 	}
 
 	if (options & PHP_HASH_HMAC) {
 		if (!ops->is_crypto) {
 			php_error_docref(NULL, E_WARNING, "HMAC requested with a non-cryptographic hashing algorithm: %s", ZSTR_VAL(algo));
-			zval_ptr_dtor(return_value);
 			RETURN_FALSE;
 		}
 		if (!key || (ZSTR_LEN(key) == 0)) {
 			/* Note: a zero length key is no key at all */
 			php_error_docref(NULL, E_WARNING, "HMAC requested without a key");
-			zval_ptr_dtor(return_value);
 			RETURN_FALSE;
 		}
 	}
+
+	object_init_ex(return_value, php_hashcontext_ce);
+	hash = php_hashcontext_from_object(Z_OBJ_P(return_value));
 
 	context = emalloc(ops->context_size);
 	ops->hash_init(context);
@@ -395,14 +398,6 @@ static void php_hashcontext_ctor(INTERNAL_FUNCTION_PARAMETERS, zval *objval) {
 		ops->hash_update(context, (unsigned char *) K, ops->block_size);
 		hash->key = (unsigned char *) K;
 	}
-}
-
-/* {{{ proto HashContext hash_init(string algo[, int options, string key])
-Initialize a hashing context */
-PHP_FUNCTION(hash_init)
-{
-	object_init_ex(return_value, php_hashcontext_ce);
-	php_hashcontext_ctor(INTERNAL_FUNCTION_PARAM_PASSTHRU, return_value);
 }
 /* }}} */
 
@@ -575,7 +570,7 @@ PHP_FUNCTION(hash_copy)
 		return;
 	}
 
-	RETVAL_OBJ(Z_OBJ_HANDLER_P(zhash, clone_obj)(zhash));
+	RETVAL_OBJ(Z_OBJ_HANDLER_P(zhash, clone_obj)(Z_OBJ_P(zhash)));
 
 	if (php_hashcontext_from_object(Z_OBJ_P(return_value))->context == NULL) {
 		zval_ptr_dtor(return_value);
@@ -620,7 +615,7 @@ PHP_FUNCTION(hash_hkdf)
 	zend_string *returnval, *ikm, *algo, *info = NULL, *salt = NULL;
 	zend_long length = 0;
 	unsigned char *prk, *digest, *K;
-	int i;
+	size_t i;
 	size_t rounds;
 	const php_hash_ops *ops;
 	void *context;
@@ -1143,12 +1138,12 @@ static void php_hashcontext_dtor(zend_object *obj) {
 /* }}} */
 
 /* {{{ php_hashcontext_clone */
-static zend_object *php_hashcontext_clone(zval *pzv) {
-	php_hashcontext_object *oldobj = php_hashcontext_from_object(Z_OBJ_P(pzv));
-	zend_object *znew = php_hashcontext_create(Z_OBJCE_P(pzv));
+static zend_object *php_hashcontext_clone(zend_object *zobj) {
+	php_hashcontext_object *oldobj = php_hashcontext_from_object(zobj);
+	zend_object *znew = php_hashcontext_create(zobj->ce);
 	php_hashcontext_object *newobj = php_hashcontext_from_object(znew);
 
-	zend_objects_clone_members(znew, Z_OBJ_P(pzv));
+	zend_objects_clone_members(znew, zobj);
 
 	newobj->ops = oldobj->ops;
 	newobj->options = oldobj->options;
@@ -1210,6 +1205,7 @@ PHP_MINIT_FUNCTION(hash)
 	php_hash_register_algo("adler32",		&php_hash_adler32_ops);
 	php_hash_register_algo("crc32",			&php_hash_crc32_ops);
 	php_hash_register_algo("crc32b",		&php_hash_crc32b_ops);
+	php_hash_register_algo("crc32c",		&php_hash_crc32c_ops);
 	php_hash_register_algo("fnv132",		&php_hash_fnv132_ops);
 	php_hash_register_algo("fnv1a32",		&php_hash_fnv1a32_ops);
 	php_hash_register_algo("fnv164",		&php_hash_fnv164_ops);
@@ -1492,16 +1488,3 @@ zend_module_entry hash_module_entry = {
 	STANDARD_MODULE_PROPERTIES
 };
 /* }}} */
-
-#ifdef COMPILE_DL_HASH
-ZEND_GET_MODULE(hash)
-#endif
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -64,7 +64,7 @@ ZEND_API void zend_ts_hash_reverse_apply(TsHashTable *ht, apply_func_t apply_fun
 ZEND_API int zend_ts_hash_del(TsHashTable *ht, zend_string *key);
 ZEND_API int zend_ts_hash_index_del(TsHashTable *ht, zend_ulong h);
 
-/* Data retreival */
+/* Data retrieval */
 ZEND_API zval *zend_ts_hash_find(TsHashTable *ht, zend_string *key);
 ZEND_API zval *zend_ts_hash_index_find(TsHashTable *ht, zend_ulong);
 
@@ -73,7 +73,7 @@ ZEND_API void zend_ts_hash_copy(TsHashTable *target, TsHashTable *source, copy_c
 ZEND_API void zend_ts_hash_copy_to_hash(HashTable *target, TsHashTable *source, copy_ctor_func_t pCopyConstructor);
 ZEND_API void zend_ts_hash_merge(TsHashTable *target, TsHashTable *source, copy_ctor_func_t pCopyConstructor, int overwrite);
 ZEND_API void zend_ts_hash_merge_ex(TsHashTable *target, TsHashTable *source, copy_ctor_func_t pCopyConstructor, merge_checker_func_t pMergeSource, void *pParam);
-ZEND_API int zend_ts_hash_sort(TsHashTable *ht, sort_func_t sort_func, compare_func_t compare_func, int renumber);
+ZEND_API void zend_ts_hash_sort(TsHashTable *ht, sort_func_t sort_func, compare_func_t compare_func, int renumber);
 ZEND_API int zend_ts_hash_compare(TsHashTable *ht1, TsHashTable *ht2, compare_func_t compar, zend_bool ordered);
 ZEND_API zval *zend_ts_hash_minmax(TsHashTable *ht, compare_func_t compar, int flag);
 
@@ -136,13 +136,3 @@ END_EXTERN_C()
 	zend_ts_hash_init(ht, n, NULL, ZVAL_PTR_DTOR, persistent)
 
 #endif							/* ZEND_HASH_H */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

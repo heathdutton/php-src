@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -43,12 +43,7 @@
 
 #endif
 
-#if HAVE_SIGNAL_H
-
 #include <signal.h>
-
-#endif
-
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -86,7 +81,6 @@ zend_compiler_globals    *compiler_globals;
 zend_executor_globals    *executor_globals;
 php_core_globals         *core_globals;
 sapi_globals_struct      *sapi_globals;
-void ***tsrm_ls;
 #endif
 
 zend_module_entry litespeed_module_entry;
@@ -245,6 +239,7 @@ static void litespeed_php_import_environment_variables(zval *array_ptr)
         return;
     }
 
+    tsrm_env_lock();
     for (env = environ; env != NULL && *env != NULL; env++) {
         p = strchr(*env, '=');
         if (!p) {               /* malformed entry? */
@@ -259,6 +254,7 @@ static void litespeed_php_import_environment_variables(zval *array_ptr)
         t[nlen] = '\0';
         add_variable(t, nlen, p + 1, strlen( p + 1 ), array_ptr);
     }
+    tsrm_env_unlock();
     if (t != buf && t != NULL) {
         efree(t);
     }
@@ -367,6 +363,8 @@ static void sapi_lsapi_log_message(char *message, int syslog_type_int)
     {
         snprintf( buf, 8191, "%s\n", message );
         message = buf;
+        if (len > 8191)
+            len = 8191;
         ++len;
     }
     LSAPI_Write_Stderr( message, len);
@@ -450,7 +448,7 @@ static int sapi_lsapi_activate()
 static sapi_module_struct lsapi_sapi_module =
 {
     "litespeed",
-    "LiteSpeed V7.1",
+    "LiteSpeed V7.3",
 
     php_lsapi_startup,              /* startup */
     php_module_shutdown_wrapper,    /* shutdown */
@@ -1037,9 +1035,9 @@ static int cli_main( int argc, char * argv[] )
             case 'v':
                 if (php_request_startup() != FAILURE) {
 #if ZEND_DEBUG
-                    php_printf("PHP %s (%s) (built: %s %s) (DEBUG)\nCopyright (c) 1997-2018 The PHP Group\n%s", PHP_VERSION, sapi_module.name, __DATE__, __TIME__, get_zend_version());
+                    php_printf("PHP %s (%s) (built: %s %s) (DEBUG)\nCopyright (c) The PHP Group\n%s", PHP_VERSION, sapi_module.name, __DATE__, __TIME__, get_zend_version());
 #else
-                    php_printf("PHP %s (%s) (built: %s %s)\nCopyright (c) 1997-2018 The PHP Group\n%s", PHP_VERSION, sapi_module.name, __DATE__, __TIME__, get_zend_version());
+                    php_printf("PHP %s (%s) (built: %s %s)\nCopyright (c) The PHP Group\n%s", PHP_VERSION, sapi_module.name, __DATE__, __TIME__, get_zend_version());
 #endif
 #ifdef PHP_OUTPUT_NEWAPI
                     php_output_end_all();
@@ -1225,14 +1223,12 @@ int main( int argc, char * argv[] )
     int slow_script_msec = 0;
     char time_buf[40];
 
-#ifdef HAVE_SIGNAL_H
 #if defined(SIGPIPE) && defined(SIG_IGN)
     signal(SIGPIPE, SIG_IGN);
 #endif
-#endif
 
 #ifdef ZTS
-    tsrm_startup(1, 1, 0, NULL);
+    php_tsrm_startup();
 #endif
 
 #if PHP_MAJOR_VERSION >= 7
@@ -1260,7 +1256,6 @@ int main( int argc, char * argv[] )
     executor_globals = ts_resource(executor_globals_id);
     core_globals = ts_resource(core_globals_id);
     sapi_globals = ts_resource(sapi_globals_id);
-    tsrm_ls = ts_resource(0);
 
     SG(request_info).path_translated = NULL;
 #endif
@@ -1373,6 +1368,7 @@ ZEND_END_ARG_INFO()
 PHP_FUNCTION(litespeed_request_headers);
 PHP_FUNCTION(litespeed_response_headers);
 PHP_FUNCTION(apache_get_modules);
+PHP_FUNCTION(litespeed_finish_request);
 
 PHP_MINFO_FUNCTION(litespeed);
 
@@ -1380,9 +1376,11 @@ static const zend_function_entry litespeed_functions[] = {
     PHP_FE(litespeed_request_headers,   arginfo_litespeed__void)
     PHP_FE(litespeed_response_headers,  arginfo_litespeed__void)
     PHP_FE(apache_get_modules,          arginfo_litespeed__void)
+    PHP_FE(litespeed_finish_request,    arginfo_litespeed__void)
     PHP_FALIAS(getallheaders,           litespeed_request_headers,  arginfo_litespeed__void)
     PHP_FALIAS(apache_request_headers,  litespeed_request_headers,  arginfo_litespeed__void)
     PHP_FALIAS(apache_response_headers, litespeed_response_headers, arginfo_litespeed__void)
+    PHP_FALIAS(fastcgi_finish_request,  litespeed_finish_request,   arginfo_litespeed__void)
     {NULL, NULL, NULL}
 };
 
@@ -1511,11 +1509,16 @@ PHP_FUNCTION(apache_get_modules)
 /* }}} */
 
 
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */
+/* {{{ proto array litespeed_finish_request(void)
+   Flushes all response data to the client */
+PHP_FUNCTION(litespeed_finish_request)
+{
+    if (ZEND_NUM_ARGS() > 0) {
+        WRONG_PARAM_COUNT;
+    }
+    if (LSAPI_End_Response() != -1) {
+        RETURN_TRUE;
+    }
+    RETURN_FALSE;
+}
+/* }}} */

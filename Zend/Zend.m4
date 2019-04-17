@@ -2,62 +2,19 @@ dnl
 dnl This file contains Zend specific autoconf functions.
 dnl
 
-AC_DEFUN([LIBZEND_CHECK_INT_TYPE],[
-AC_MSG_CHECKING(for $1)
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
-#if HAVE_SYS_TYPES_H
-#include <sys/types.h>
-#endif
-#if HAVE_INTTYPES_H
-#include <inttypes.h>
-#elif HAVE_STDINT_H
-#include <stdint.h>
-#endif]],
-[[if (($1 *) 0)
-  return 0;
-if (sizeof ($1))
-  return 0;
-]])],[
-  AC_DEFINE_UNQUOTED([HAVE_]translit($1,a-z_-,A-Z__), 1,[Define if $1 type is present. ])
-  AC_MSG_RESULT(yes)
-], [AC_MSG_RESULT(no)
-])dnl
-])
-
 AC_DEFUN([LIBZEND_BASIC_CHECKS],[
-
-AC_REQUIRE([AC_PROG_YACC])
 AC_REQUIRE([AC_PROG_CC])
-AC_REQUIRE([AC_PROG_CC_C_O])
-AC_REQUIRE([AC_HEADER_STDC])
-
-LIBZEND_BISON_CHECK
-
-dnl Ugly hack to get around a problem with gcc on AIX.
-if test "$CC" = "gcc" -a "$ac_cv_prog_cc_g" = "yes" -a \
-   "`uname -sv`" = "AIX 4"; then
-	CFLAGS=`echo $CFLAGS | sed -e 's/-g//'`
-fi
 
 AC_CHECK_HEADERS(
 inttypes.h \
 stdint.h \
-limits.h \
 malloc.h \
 unistd.h \
 sys/types.h \
 sys/time.h \
-signal.h \
 unix.h \
 cpuid.h \
 dlfcn.h)
-
-AC_TYPE_SIZE_T
-
-AC_DEFUN([LIBZEND_LIBDL_CHECKS],[
-AC_CHECK_LIB(dl, dlopen, [LIBS="-ldl $LIBS"])
-AC_CHECK_FUNC(dlopen,[AC_DEFINE(HAVE_LIBDL, 1,[ ])])
-])
 
 AC_DEFUN([LIBZEND_DLSYM_CHECK],[
 dnl
@@ -74,22 +31,10 @@ _LT_AC_TRY_DLOPEN_SELF([
 ], [])
 ])
 
-dnl This is required for QNX and may be some BSD derived systems
-AC_CHECK_TYPE( uint, unsigned int )
-AC_CHECK_TYPE( ulong, unsigned long )
-
-dnl Check if int32_t and uint32_t are defined
-LIBZEND_CHECK_INT_TYPE(int32_t)
-LIBZEND_CHECK_INT_TYPE(uint32_t)
-
 dnl Checks for library functions.
-AC_FUNC_ALLOCA
-AC_CHECK_FUNCS(memcpy strdup getpid kill strtod strtol finite fpclass sigsetjmp)
-AC_ZEND_BROKEN_SPRINTF
+AC_CHECK_FUNCS(getpid kill strtod finite fpclass sigsetjmp)
 
 AC_CHECK_DECLS([isfinite, isnan, isinf], [], [], [[#include <math.h>]])
-
-ZEND_FP_EXCEPT
 
 ZEND_CHECK_FLOAT_PRECISION
 
@@ -127,36 +72,22 @@ int main()
 
 ])
 
-AC_DEFUN([LIBZEND_ENABLE_DEBUG],[
-
-AC_ARG_ENABLE(debug,
-[  --enable-debug          Compile with debugging symbols],[
-  ZEND_DEBUG=$enableval
-],[
-  ZEND_DEBUG=no
-])
-
-])
-
 AC_DEFUN([LIBZEND_OTHER_CHECKS],[
 
-AC_ARG_ENABLE(maintainer-zts,
-[  --enable-maintainer-zts Enable thread safety - for code maintainers only!!],[
-  ZEND_MAINTAINER_ZTS=$enableval
-],[
-  ZEND_MAINTAINER_ZTS=no
-])
+AC_ARG_ENABLE([zts],
+  [AS_HELP_STRING([--enable-zts],
+    [Enable thread safety])],
+  [ZEND_ZTS=$enableval],
+  [ZEND_ZTS=no])
 
-AC_ARG_ENABLE(inline-optimization,
-[  --disable-inline-optimization
-                          If building zend_execute.lo fails, try this switch],[
-  ZEND_INLINE_OPTIMIZATION=$enableval
-],[
-  ZEND_INLINE_OPTIMIZATION=yes
-])
+AC_ARG_ENABLE([inline-optimization],
+  [AS_HELP_STRING([--disable-inline-optimization],
+    [If building zend_execute.lo fails, try this switch])],
+  [ZEND_INLINE_OPTIMIZATION=$enableval],
+  [ZEND_INLINE_OPTIMIZATION=yes])
 
 AC_MSG_CHECKING(whether to enable thread-safety)
-AC_MSG_RESULT($ZEND_MAINTAINER_ZTS)
+AC_MSG_RESULT($ZEND_ZTS)
 
 AC_MSG_CHECKING(whether to enable inline optimization for GCC)
 AC_MSG_RESULT($ZEND_INLINE_OPTIMIZATION)
@@ -170,16 +101,16 @@ if test "$ZEND_DEBUG" = "yes"; then
   if test "$CFLAGS" = "-g -O2"; then
   	CFLAGS=-g
   fi
-  test -n "$GCC" && DEBUG_CFLAGS="$DEBUG_CFLAGS -Wall"
   test -n "$GCC" && test "$USE_MAINTAINER_MODE" = "yes" && \
     DEBUG_CFLAGS="$DEBUG_CFLAGS -Wmissing-prototypes -Wstrict-prototypes -Wmissing-declarations"
 else
   AC_DEFINE(ZEND_DEBUG,0,[ ])
 fi
 
+test -n "$GCC" && CFLAGS="$CFLAGS -Wall -Wno-strict-aliasing"
 test -n "$DEBUG_CFLAGS" && CFLAGS="$CFLAGS $DEBUG_CFLAGS"
 
-if test "$ZEND_MAINTAINER_ZTS" = "yes"; then
+if test "$ZEND_ZTS" = "yes"; then
   AC_DEFINE(ZTS,1,[ ])
   CFLAGS="$CFLAGS -DZTS"
 fi
@@ -254,13 +185,11 @@ AC_MSG_RESULT(done)
 
 AC_CHECK_FUNCS(mremap)
 
-
-AC_ARG_ENABLE(zend-signals,
-[  --disable-zend-signals  whether to enable zend signal handling],[
-  ZEND_SIGNALS=$enableval
-],[
-  ZEND_SIGNALS=yes
-])
+AC_ARG_ENABLE([zend-signals],
+  [AS_HELP_STRING([--disable-zend-signals],
+    [whether to enable zend signal handling])],
+  [ZEND_SIGNALS=$enableval],
+  [ZEND_SIGNALS=yes])
 
 AC_CHECK_FUNC(sigaction, [
 	AC_DEFINE(HAVE_SIGACTION, 1, [Whether sigaction() is available])
@@ -293,13 +222,12 @@ else
   AC_MSG_RESULT(no)
 fi
 
-AC_ARG_ENABLE(gcc-global-regs,
-[  --disable-gcc-global-regs
-                          whether to enable GCC global register variables],[
-  ZEND_GCC_GLOBAL_REGS=$enableval
-],[
-  ZEND_GCC_GLOBAL_REGS=yes
-])
+AC_ARG_ENABLE([gcc-global-regs],
+  [AS_HELP_STRING([--disable-gcc-global-regs],
+    [whether to enable GCC global register variables])],
+  [ZEND_GCC_GLOBAL_REGS=$enableval],
+  [ZEND_GCC_GLOBAL_REGS=yes])
+
 AC_MSG_CHECKING(for global register variables support)
 if test "$ZEND_GCC_GLOBAL_REGS" != "no"; then
   AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[

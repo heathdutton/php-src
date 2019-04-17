@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -85,6 +85,7 @@
 #define SCNG	LANG_SCNG
 #ifdef ZTS
 ZEND_API ts_rsrc_id language_scanner_globals_id;
+ZEND_API size_t language_scanner_globals_offset;
 #else
 ZEND_API zend_php_scanner_globals language_scanner_globals;
 #endif
@@ -1681,6 +1682,10 @@ NEWLINE ("\r"|"\n"|"\r\n")
 	RETURN_TOKEN(T_XOR_EQUAL);
 }
 
+<ST_IN_SCRIPTING>"??=" {
+	RETURN_TOKEN(T_COALESCE_EQUAL);
+}
+
 <ST_IN_SCRIPTING>"||" {
 	RETURN_TOKEN(T_BOOLEAN_OR);
 }
@@ -2211,10 +2216,16 @@ skip_escape_conversion:
 	if (SCNG(output_filter)) {
 		size_t sz = 0;
 		char *str = NULL;
+		zend_string *new_str;
 		s = Z_STRVAL_P(zendlval);
 		// TODO: avoid reallocation ???
 		SCNG(output_filter)((unsigned char **)&str, &sz, (unsigned char *)s, (size_t)Z_STRLEN_P(zendlval));
-		ZVAL_STRINGL(zendlval, str, sz);
+		new_str = zend_string_init(str, sz, 0);
+		if (str != s) {
+			efree(str);
+		}
+		zend_string_release_ex(Z_STR_P(zendlval), 0);
+		ZVAL_STR(zendlval, new_str);
 	}
 	RETURN_TOKEN_WITH_VAL(T_CONSTANT_ENCAPSED_STRING);
 }

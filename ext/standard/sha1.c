@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -244,7 +244,7 @@ PHPAPI void PHP_SHA1Final(unsigned char digest[20], PHP_SHA1_CTX * context)
 
 	/* Zeroize sensitive information.
 	 */
-	memset((unsigned char*) context, 0, sizeof(*context));
+	ZEND_SECURE_ZERO((unsigned char*) context, sizeof(*context));
 }
 /* }}} */
 
@@ -355,7 +355,7 @@ const unsigned char block[64];
 	state[4] += e;
 
 	/* Zeroize sensitive information. */
-	memset((unsigned char*) x, 0, sizeof(x));
+	ZEND_SECURE_ZERO((unsigned char*) x, sizeof(x));
 }
 /* }}} */
 
@@ -395,12 +395,3 @@ unsigned int len;
 			(((uint32_t) input[j + 1]) << 16) | (((uint32_t) input[j]) << 24);
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

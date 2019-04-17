@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -67,16 +67,18 @@ ZEND_KNOWN_STRINGS(_ZEND_STR_DSC)
 	NULL
 };
 
-static void zend_init_interned_strings_ht(HashTable *interned_strings, int permanent)
+static zend_always_inline void zend_init_interned_strings_ht(HashTable *interned_strings, int permanent)
 {
 	zend_hash_init(interned_strings, 1024, NULL, _str_dtor, permanent);
-	zend_hash_real_init_mixed(interned_strings);
+	if (permanent) {
+		zend_hash_real_init_mixed(interned_strings);
+	}
 }
 
 ZEND_API void zend_interned_strings_init(void)
 {
 	char s[2];
-	int i;
+	unsigned int i;
 	zend_string *str;
 
 	interned_string_request_handler = zend_new_interned_string_request;
@@ -445,13 +447,3 @@ ZEND_API zend_bool ZEND_FASTCALL I_WRAP_SONAME_FNNAME_ZU(NONE,zend_string_equal_
 #endif
 
 #endif
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

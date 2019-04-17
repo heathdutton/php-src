@@ -2,7 +2,7 @@
   +----------------------------------------------------------------------+
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2018 The PHP Group                                |
+  | Copyright (c) The PHP Group                                          |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -1700,6 +1700,10 @@ static PHP_FUNCTION(xmlwriter_open_memory)
 	zval *self = getThis();
 	ze_xmlwriter_object *ze_obj = NULL;
 
+	if (zend_parse_parameters_none() == FAILURE) {
+		return;
+	}
+
 	if (self) {
 		/* We do not use XMLWRITER_FROM_OBJECT, xmlwriter init function here */
 		ze_obj = Z_XMLWRITER_P(self);
@@ -1835,12 +1839,3 @@ static PHP_MINFO_FUNCTION(xmlwriter)
 	php_info_print_table_end();
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */

@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -55,7 +55,7 @@
 
 #define PHP_MAGIC_TYPE "application/x-httpd-php"
 #define PHP_SOURCE_MAGIC_TYPE "application/x-httpd-php-source"
-#define PHP_SCRIPT "php7-script"
+#define PHP_SCRIPT "php-script"
 
 /* A way to specify the location of the php.ini dir in an apache directive */
 char *apache2_php_ini_path_override = NULL;
@@ -474,9 +474,10 @@ php_apache_server_startup(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp
 		apache2_sapi_module.php_ini_path_override = apache2_php_ini_path_override;
 	}
 #ifdef ZTS
-	tsrm_startup(1, 1, 0, NULL);
-	(void)ts_resource(0);
+	php_tsrm_startup();
+# ifdef PHP_WIN32
 	ZEND_TSRMLS_CACHE_UPDATE();
+# endif
 #endif
 
 	zend_signal_startup();
@@ -550,7 +551,7 @@ typedef struct {
 	HashTable config;
 } php_conf_rec;
 		zend_string *str;
-		php_conf_rec *c = ap_get_module_config(r->per_dir_config, &php7_module);
+		php_conf_rec *c = ap_get_module_config(r->per_dir_config, &php_module);
 
 		ZEND_HASH_FOREACH_STR_KEY(&c->config, str) {
 			zend_restore_ini_entry(str, ZEND_INI_STAGE_SHUTDOWN);
@@ -574,12 +575,14 @@ static int php_handler(request_rec *r)
 #ifdef ZTS
 	/* initial resource fetch */
 	(void)ts_resource(0);
+# ifdef PHP_WIN32
 	ZEND_TSRMLS_CACHE_UPDATE();
+# endif
 #endif
 
 #define PHPAP_INI_OFF php_apache_ini_dtor(r, parent_req);
 
-	conf = ap_get_module_config(r->per_dir_config, &php7_module);
+	conf = ap_get_module_config(r->per_dir_config, &php_module);
 
 	/* apply_config() needs r in some cases, so allocate server_context early */
 	ctx = SG(server_context);
@@ -753,12 +756,3 @@ void php_ap2_register_hook(apr_pool_t *p)
 #endif
 	ap_hook_child_init(php_apache_child_init, NULL, NULL, APR_HOOK_MIDDLE);
 }
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

@@ -44,7 +44,7 @@ echo "\n*** Testing is_bool() on non null values ***\n";
 
 // get a resource type variable
 $fp = fopen (__FILE__, "r");
-$dfp = opendir ( dirname(__FILE__) );
+$dfp = opendir ( __DIR__ );
 
 // other types in a array
 $not_null_types = array (
@@ -126,13 +126,6 @@ foreach ($not_null_types as $type ) {
   echo "-- Iteration $loop_counter --\n"; $loop_counter++;
   var_dump( is_null($type) );
 }
-
-echo "\n*** Testing error conditions ***\n";
-//Zero argument
-var_dump( is_null() );
-
-//arguments more than expected
-var_dump( is_null(NULL, null) );
 
 echo "Done\n";
 
@@ -284,13 +277,5 @@ bool(false)
 -- Iteration 58 --
 bool(false)
 -- Iteration 59 --
-bool(false)
-
-*** Testing error conditions ***
-
-Warning: is_null() expects exactly 1 parameter, 0 given in %s on line %d
-bool(false)
-
-Warning: is_null() expects exactly 1 parameter, 2 given in %s on line %d
 bool(false)
 Done

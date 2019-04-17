@@ -300,6 +300,7 @@ serialize_precision = -1
 ; open_basedir, if set, limits all file operations to the defined directory
 ; and below.  This directive makes most sense if used in a per-directory
 ; or per-virtualhost web server configuration file.
+; Note: disables the realpath cache
 ; http://php.net/open-basedir
 ;open_basedir =
 
@@ -332,6 +333,7 @@ disable_classes =
 ; Determines the size of the realpath cache to be used by PHP. This value should
 ; be increased on systems where PHP opens many files to reflect the quantity of
 ; the file operations performed.
+; Note: if open_basedir is set, the cache is disabled
 ; http://php.net/realpath-cache-size
 ;realpath_cache_size = 4096k
 
@@ -517,14 +519,6 @@ report_memleaks = On
 ; This setting is on by default.
 ;report_zend_debug = 0
 
-; Store the last error/warning message in $php_errormsg (boolean).
-; This directive is DEPRECATED.
-; Default Value: Off
-; Development Value: Off
-; Production Value: Off
-; http://php.net/track-errors
-;track_errors = Off
-
 ; Turn off normal error reporting and emit XML-RPC error XML
 ; http://php.net/xmlrpc-errors
 ;xmlrpc_errors = 0
@@ -591,9 +585,10 @@ html_errors = On
 ; control characters. If your logger accepts everything, then no filtering
 ; is needed at all.
 ; Allowed values are:
-;   ascii (only base ASCII characters)
-;   no_ctrl (all characters except control characters)
+;   ascii (all printable ASCII characters and NL)
+;   no-ctrl (all characters except control characters)
 ;   all (all characters)
+; http://php.net/syslog.filter
 ;syslog.filter = ascii
 
 ;windows.show_crt_warning
@@ -986,6 +981,13 @@ cli_server.color = On
 ; otherwise output encoding conversion cannot be performed.
 ;iconv.output_encoding =
 
+[imap]
+; rsh/ssh logins are disabled by default. Use this INI entry if you want to
+; enable them. Note that the IMAP library does not filter mailbox names before
+; passing them to rsh/ssh command, thus passing untrusted data to this function
+; with rsh/ssh enabled is insecure.
+;imap.enable_insecure_rsh=0
+
 [intl]
 ;intl.default_locale =
 ; This directive allows you to produce PHP errors when some error
@@ -995,7 +997,18 @@ cli_server.color = On
 ;intl.use_exceptions = 0
 
 [sqlite3]
+; Directory pointing to SQLite3 extensions
+; http://php.net/sqlite3.extension-dir
 ;sqlite3.extension_dir =
+
+; SQLite defensive mode flag (only available from SQLite 3.26+)
+; When the defensive flag is enabled, language features that allow ordinary
+; SQL to deliberately corrupt the database file are disabled. This forbids
+; writing directly to the schema, shadow tables (eg. FTS data tables), or
+; the sqlite_dbpage virtual table.
+; https://www.sqlite.org/c3ref/c_dbconfig_defensive.html
+; (for older SQLite versions, this flag has no use)
+;sqlite3.defensive = 1
 
 [Pcre]
 ; PCRE library backtracking limit.
@@ -1017,8 +1030,6 @@ cli_server.color = On
 ; Whether to pool ODBC connections. Can be one of "strict", "relaxed" or "off"
 ; http://php.net/pdo-odbc.connection-pooling
 ;pdo_odbc.connection_pooling=strict
-
-;pdo_odbc.db2_instance_name
 
 [Pdo_mysql]
 ; Default socket name for local MySQL connects.  If empty, uses the built-in
@@ -1165,11 +1176,11 @@ mysqli.default_port = 3306
 ; http://php.net/mysqli.default-socket
 mysqli.default_socket =
 
-; Default host for mysql_connect() (doesn't apply in safe mode).
+; Default host for mysqli_connect() (doesn't apply in safe mode).
 ; http://php.net/mysqli.default-host
 mysqli.default_host =
 
-; Default user for mysql_connect() (doesn't apply in safe mode).
+; Default user for mysqli_connect() (doesn't apply in safe mode).
 ; http://php.net/mysqli.default-user
 mysqli.default_user =
 
@@ -1592,11 +1603,6 @@ zend.assertions = 1
 ; http://php.net/assert.callback
 ;assert.callback = 0
 
-; Eval the expression with current error_reporting().  Set to true if you want
-; error_reporting(0) around the eval().
-; http://php.net/assert.quiet-eval
-;assert.quiet_eval = 0
-
 [COM]
 ; path to a file containing GUIDs, IIDs or filenames of files with TypeLibs
 ; http://php.net/com.typelib-file
@@ -1671,17 +1677,6 @@ zend.assertions = 1
 ; http://php.net/mbstring.substitute-character
 ;mbstring.substitute_character = none
 
-; overload(replace) single byte functions by mbstring functions.
-; mail(), ereg(), etc are overloaded by mb_send_mail(), mb_ereg(),
-; etc. Possible values are 0,1,2,4 or combination of them.
-; For example, 7 for overload everything.
-; 0: No overload
-; 1: Overload mail() function
-; 2: Overload str*() functions
-; 4: Overload ereg*() functions
-; http://php.net/mbstring.func-overload
-;mbstring.func_overload = 0
-
 ; enable strict encoding detection.
 ; Default: Off
 ;mbstring.strict_detection = On
@@ -1690,6 +1685,11 @@ zend.assertions = 1
 ; is activated.
 ; Default: mbstring.http_output_conv_mimetype=^(text/|application/xhtml\+xml)
 ;mbstring.http_output_conv_mimetype=
+
+; This directive specifies maximum stack depth for mbstring regular expressions. It is similar
+; to the pcre.recursion_limit for PCRE.
+; Default: 100000
+;mbstring.regex_stack_limit=100000
 
 [gd]
 ; Tell the jpeg decode to ignore warnings and try to create
@@ -1888,6 +1888,19 @@ ldap.max_links = -1
 ; optimizations.
 ;opcache.opt_debug_level=0
 
+; Specifies a PHP script that is going to be compiled and executed at server
+; start-up.
+; http://php.net/opcache.preload
+;opcache.preload=
+
+; Prevents caching files that are less than this number of seconds old. It
+; protects from caching of incompletely updated files. In case all file updates
+; on your site are atomic, you may increase performance by setting it to "0".
+;opcache.file_update_protection=2
+
+; Absolute path used to store shared lockfiles (for *nix only).
+;opcache.lockfile_path=/tmp
+
 [curl]
 ; A default value for the CURLOPT_CAINFO option. This is required to be an
 ; absolute path.
@@ -1911,6 +1924,9 @@ ldap.max_links = -1
 ; SSL stream context option.
 ;openssl.capath=
 
-; Local Variables:
-; tab-width: 4
-; End:
+[ffi]
+; FFI API restriction. Possibe values:
+; "preload" - enabled in CLI scripts and preloaded files (default)
+; "false"   - always disabled
+; "true"    - always enabled
+;ffi.enable=preload

@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | Zend Engine                                                          |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1998-2018 Zend Technologies Ltd. (http://www.zend.com) |
+   | Copyright (c) Zend Technologies Ltd. (http://www.zend.com)           |
    +----------------------------------------------------------------------+
    | This source file is subject to version 2.00 of the Zend license,     |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -33,6 +33,7 @@
 #include "zend_generators.h"
 #include "zend_vm.h"
 #include "zend_float.h"
+#include "zend_weakrefs.h"
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
@@ -177,11 +178,11 @@ void init_executor(void) /* {{{ */
 	EG(ht_iterators) = EG(ht_iterators_slots);
 	memset(EG(ht_iterators), 0, sizeof(EG(ht_iterators_slots)));
 
-	EG(each_deprecation_thrown) = 0;
-
 	EG(persistent_constants_count) = EG(zend_constants)->nNumUsed;
 	EG(persistent_functions_count) = EG(function_table)->nNumUsed;
 	EG(persistent_classes_count)   = EG(class_table)->nNumUsed;
+
+	zend_weakrefs_init();
 
 	EG(active) = 1;
 }
@@ -276,6 +277,8 @@ void shutdown_executor(void) /* {{{ */
 	}
 
 	zend_objects_store_free_object_storage(&EG(objects_store), fast_shutdown);
+
+	zend_weakrefs_shutdown();
 
 	/* All resources and objects are destroyed. */
 	/* No PHP callback functions may be called after this point. */
@@ -568,29 +571,10 @@ ZEND_API int zend_use_undefined_constant(zend_string *name, zend_ast_attr attr, 
 	} else if ((colon = (char*)zend_memrchr(ZSTR_VAL(name), ':', ZSTR_LEN(name)))) {
 		zend_throw_error(NULL, "Undefined class constant '%s'", ZSTR_VAL(name));
 		return FAILURE;
-	} else if ((attr & IS_CONSTANT_UNQUALIFIED) == 0) {
+	} else {
 		zend_throw_error(NULL, "Undefined constant '%s'", ZSTR_VAL(name));
 		return FAILURE;
-	} else {
-		char *actual = ZSTR_VAL(name);
-		size_t actual_len = ZSTR_LEN(name);
-		char *slash = (char *) zend_memrchr(actual, '\\', actual_len);
-
-		if (slash) {
-			actual = slash + 1;
-			actual_len -= (actual - ZSTR_VAL(name));
-		}
-
-		zend_error(E_WARNING, "Use of undefined constant %s - assumed '%s' (this will throw an Error in a future version of PHP)", actual, actual);
-		if (EG(exception)) {
-			return FAILURE;
-		} else {
-			zend_string *result_str = zend_string_init(actual, actual_len, 0);
-			zval_ptr_dtor_nogc(result);
-			ZVAL_NEW_STR(result, result_str);
-		}
 	}
-	return SUCCESS;
 }
 /* }}} */
 
@@ -650,6 +634,8 @@ int zend_call_function(zend_fcall_info *fci, zend_fcall_info_cache *fci_cache) /
 	zend_execute_data *call, dummy_execute_data;
 	zend_fcall_info_cache fci_cache_local;
 	zend_function *func;
+	uint32_t call_info;
+	void *object_or_called_scope;
 
 	ZVAL_UNDEF(fci->retval);
 
@@ -705,28 +691,24 @@ int zend_call_function(zend_fcall_info *fci, zend_fcall_info_cache *fci_cache) /
 				EG(current_execute_data) = dummy_execute_data.prev_execute_data;
 			}
 			return FAILURE;
-		} else if (error) {
-			/* Capitalize the first latter of the error message */
-			if (error[0] >= 'a' && error[0] <= 'z') {
-				error[0] += ('A' - 'a');
-			}
-			zend_error(E_DEPRECATED, "%s", error);
-			efree(error);
-			if (UNEXPECTED(EG(exception))) {
-				if (EG(current_execute_data) == &dummy_execute_data) {
-					EG(current_execute_data) = dummy_execute_data.prev_execute_data;
-				}
-				return FAILURE;
-			}
 		}
+
+		ZEND_ASSERT(!error);
 	}
 
 	func = fci_cache->function_handler;
-	fci->object = (func->common.fn_flags & ZEND_ACC_STATIC) ?
-		NULL : fci_cache->object;
+	if ((func->common.fn_flags & ZEND_ACC_STATIC) || !fci_cache->object) {
+		fci->object = NULL;
+		object_or_called_scope = fci_cache->called_scope;
+		call_info = ZEND_CALL_TOP_FUNCTION | ZEND_CALL_DYNAMIC;
+	} else {
+		fci->object = fci_cache->object;
+		object_or_called_scope = fci->object;
+		call_info = ZEND_CALL_TOP_FUNCTION | ZEND_CALL_DYNAMIC | ZEND_CALL_HAS_THIS;
+	}
 
-	call = zend_vm_stack_push_call_frame(ZEND_CALL_TOP_FUNCTION | ZEND_CALL_DYNAMIC,
-		func, fci->param_count, fci_cache->called_scope, fci->object);
+	call = zend_vm_stack_push_call_frame(call_info,
+		func, fci->param_count, object_or_called_scope);
 
 	if (UNEXPECTED(func->common.fn_flags & ZEND_ACC_DEPRECATED)) {
 		zend_error(E_DEPRECATED, "Function %s%s%s() is deprecated",
@@ -804,11 +786,12 @@ int zend_call_function(zend_fcall_info *fci, zend_fcall_info_cache *fci_cache) /
 			/* We must re-initialize function again */
 			fci_cache->function_handler = NULL;
 		}
-	} else if (func->type == ZEND_INTERNAL_FUNCTION) {
+	} else {
 		int call_via_handler = (func->common.fn_flags & ZEND_ACC_CALL_VIA_TRAMPOLINE) != 0;
+
+		ZEND_ASSERT(func->type == ZEND_INTERNAL_FUNCTION);
 		ZVAL_NULL(fci->retval);
 		call->prev_execute_data = EG(current_execute_data);
-		call->return_value = NULL; /* this is not a constructor call */
 		EG(current_execute_data) = call;
 		if (EXPECTED(zend_execute_internal == NULL)) {
 			/* saves one function call if zend_execute_internal is not used */
@@ -827,30 +810,6 @@ int zend_call_function(zend_fcall_info *fci, zend_fcall_info_cache *fci_cache) /
 		if (call_via_handler) {
 			/* We must re-initialize function again */
 			fci_cache->function_handler = NULL;
-		}
-	} else { /* ZEND_OVERLOADED_FUNCTION */
-		ZVAL_NULL(fci->retval);
-
-		/* Not sure what should be done here if it's a static method */
-		if (fci->object) {
-			call->prev_execute_data = EG(current_execute_data);
-			EG(current_execute_data) = call;
-			fci->object->handlers->call_method(func->common.function_name, fci->object, call, fci->retval);
-			EG(current_execute_data) = call->prev_execute_data;
-		} else {
-			zend_throw_error(NULL, "Cannot call overloaded function for non-object");
-		}
-
-		zend_vm_stack_free_args(call);
-
-		if (func->type == ZEND_OVERLOADED_FUNCTION_TEMPORARY) {
-			zend_string_release_ex(func->common.function_name, 0);
-		}
-		efree(func);
-
-		if (EG(exception)) {
-			zval_ptr_dtor(fci->retval);
-			ZVAL_UNDEF(fci->retval);
 		}
 	}
 
@@ -916,16 +875,10 @@ ZEND_API zend_class_entry *zend_lookup_class_ex(zend_string *name, zend_string *
 	}
 
 	if (!EG(autoload_func)) {
-		zend_function *func = zend_fetch_function(ZSTR_KNOWN(ZEND_STR_MAGIC_AUTOLOAD));
-
-		if (func) {
-			EG(autoload_func) = func;
-		} else {
-			if (!key) {
-				zend_string_release_ex(lc_name, 0);
-			}
-			return NULL;
+		if (!key) {
+			zend_string_release_ex(lc_name, 0);
 		}
+		return NULL;
 
 	}
 
@@ -1118,7 +1071,7 @@ ZEND_API int zend_eval_string_ex(char *str, zval *retval_ptr, char *string_name,
 
 static void zend_set_timeout_ex(zend_long seconds, int reset_signals);
 
-ZEND_API ZEND_NORETURN void zend_timeout(int dummy) /* {{{ */
+ZEND_API ZEND_NORETURN void ZEND_FASTCALL zend_timeout(int dummy) /* {{{ */
 {
 #if defined(PHP_WIN32)
 # ifndef ZTS
@@ -1171,7 +1124,7 @@ static void zend_timeout_handler(int dummy) /* {{{ */
 
 		output_len = snprintf(log_buffer, sizeof(log_buffer), "\nFatal error: Maximum execution time of " ZEND_LONG_FMT "+" ZEND_LONG_FMT " seconds exceeded (terminated) in %s on line %d\n", EG(timeout_seconds), EG(hard_timeout), error_filename, error_lineno);
 		if (output_len > 0) {
-			write(2, log_buffer, MIN(output_len, sizeof(log_buffer)));
+			zend_quiet_write(2, log_buffer, MIN(output_len, sizeof(log_buffer)));
 		}
 		_exit(124);
     }
@@ -1238,7 +1191,7 @@ static void zend_set_timeout_ex(zend_long seconds, int reset_signals) /* {{{ */
 		timer, so we could end up with just an ignored timeout. Instead
 		delete and recreate. */
 	if (NULL != tq_timer) {
-		if (!DeleteTimerQueueTimer(NULL, tq_timer, NULL)) {
+		if (!DeleteTimerQueueTimer(NULL, tq_timer, INVALID_HANDLE_VALUE)) {
 			tq_timer = NULL;
 			zend_error_noreturn(E_ERROR, "Could not delete queued timer");
 			return;
@@ -1312,7 +1265,7 @@ void zend_unset_timeout(void) /* {{{ */
 {
 #ifdef ZEND_WIN32
 	if (NULL != tq_timer) {
-		if (!DeleteTimerQueueTimer(NULL, tq_timer, NULL)) {
+		if (!DeleteTimerQueueTimer(NULL, tq_timer, INVALID_HANDLE_VALUE)) {
 			EG(timed_out) = 0;
 			tq_timer = NULL;
 			zend_error_noreturn(E_ERROR, "Could not delete queued timer");
@@ -1633,13 +1586,3 @@ ZEND_API int zend_forbid_dynamic_call(const char *func_name) /* {{{ */
 	return SUCCESS;
 }
 /* }}} */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * indent-tabs-mode: t
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

@@ -2,7 +2,7 @@
   +----------------------------------------------------------------------+
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2018 The PHP Group                                |
+  | Copyright (c) The PHP Group                                          |
   +----------------------------------------------------------------------+
   | This source file is subject to version 3.01 of the PHP license,      |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -604,7 +604,7 @@ xmlNodePtr to_xml_user(encodeTypePtr type, zval *data, int style, xmlNodePtr par
 	if (type && type->map && Z_TYPE(type->map->to_xml) != IS_UNDEF) {
 		ZVAL_NULL(&return_value);
 
-		if (call_user_function(EG(function_table), NULL, &type->map->to_xml, &return_value, 1, data) == FAILURE) {
+		if (call_user_function(NULL, NULL, &type->map->to_xml, &return_value, 1, data) == FAILURE) {
 			soap_error0(E_ERROR, "Encoding: Error calling to_xml callback");
 		}
 		if (Z_TYPE(return_value) == IS_STRING) {
@@ -641,7 +641,7 @@ zval *to_zval_user(zval *ret, encodeTypePtr type, xmlNodePtr node)
 		xmlBufferFree(buf);
 		xmlFreeNode(copy);
 
-		if (call_user_function(EG(function_table), NULL, &type->map->to_zval, ret, 1, &data) == FAILURE) {
+		if (call_user_function(NULL, NULL, &type->map->to_zval, ret, 1, &data) == FAILURE) {
 			soap_error0(E_ERROR, "Encoding: Error calling from_xml callback");
 		} else if (EG(exception)) {
 			ZVAL_NULL(ret);
@@ -1827,9 +1827,9 @@ static xmlNodePtr to_xml_object(encodeTypePtr type, zval *data, int style, xmlNo
 			    sdlType->encode->details.sdl_type->kind != XSD_TYPEKIND_LIST &&
 			    sdlType->encode->details.sdl_type->kind != XSD_TYPEKIND_UNION) {
 
-				if (prop) {GC_PROTECT_RECURSION(prop);}
+				if (prop) { GC_TRY_PROTECT_RECURSION(prop); }
 				xmlParam = master_to_xml(sdlType->encode, data, style, parent);
-				if (prop) {GC_UNPROTECT_RECURSION(prop);}
+				if (prop) { GC_TRY_UNPROTECT_RECURSION(prop); }
 			} else {
 				zval rv;
 				zval *tmp = get_zval_property(data, "_", &rv);
@@ -2857,7 +2857,7 @@ static xmlNodePtr to_xml_datetime_ex(encodeTypePtr type, zval *data, char *forma
 		}
 
 		/* Time zone support */
-#ifdef HAVE_TM_GMTOFF
+#ifdef HAVE_STRUCT_TM_TM_GMTOFF
 		snprintf(tzbuf, sizeof(tzbuf), "%c%02d:%02d", (ta->tm_gmtoff < 0) ? '-' : '+', abs(ta->tm_gmtoff / 3600), abs( (ta->tm_gmtoff % 3600) / 60 ));
 #else
 # if defined(__CYGWIN__) || (defined(PHP_WIN32) && defined(_MSC_VER) && _MSC_VER >= 1900)

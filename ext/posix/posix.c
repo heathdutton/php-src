@@ -2,7 +2,7 @@
    +----------------------------------------------------------------------+
    | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
-   | Copyright (c) 1997-2018 The PHP Group                                |
+   | Copyright (c) The PHP Group                                          |
    +----------------------------------------------------------------------+
    | This source file is subject to version 3.01 of the PHP license,      |
    | that is bundled with this package in the file LICENSE, and is        |
@@ -324,6 +324,9 @@ static PHP_MINFO_FUNCTION(posix)
 
 static PHP_GINIT_FUNCTION(posix) /* {{{ */
 {
+#if defined(COMPILE_DL_POSIX) && defined(ZTS)
+	ZEND_TSRMLS_CACHE_UPDATE();
+#endif
 	posix_globals->last_error = 0;
 }
 /* }}} */
@@ -427,6 +430,9 @@ zend_module_entry posix_module_entry = {
 /* }}} */
 
 #ifdef COMPILE_DL_POSIX
+#ifdef ZTS
+ZEND_TSRMLS_CACHE_DEFINE()
+#endif
 ZEND_GET_MODULE(posix)
 #endif
 
@@ -1474,12 +1480,3 @@ PHP_FUNCTION(posix_initgroups)
 }
 /* }}} */
 #endif
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */

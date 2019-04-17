@@ -13,11 +13,15 @@ precision=14
  */
 
 // Open handle
-$file = 'vfprintf_test.txt';
+$file = 'vfprintf_error4.txt';
 $fp = fopen( $file, "a+" );
 
 echo "\n-- Testing vfprintf() function with other strangeties  --\n";
-var_dump( vfprintf( 'foo', 'bar', array( 'baz' ) ) );
+try {
+    var_dump( vfprintf( 'foo', 'bar', array( 'baz' ) ) );
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
 var_dump( vfprintf( $fp, 'Foo %$c-0202Sd', array( 2 ) ) );
 
 // Close handle
@@ -28,15 +32,13 @@ fclose( $fp );
 --CLEAN--
 <?php
 
-$file = 'vfprintf_test.txt';
+$file = 'vfprintf_error4.txt';
 unlink( $file );
 
 ?>
 --EXPECTF--
 -- Testing vfprintf() function with other strangeties  --
-
-Warning: vfprintf() expects parameter 1 to be resource, string given in %s on line %d
-bool(false)
+vfprintf() expects parameter 1 to be resource, string given
 
 Warning: vfprintf(): Argument number must be greater than zero in %s on line %d
 bool(false)

@@ -8,9 +8,6 @@ mbstring.language=Japanese
 --FILE--
 <?php
 // TODO: Add more tests
-//$debug = true; // Uncomment this line to view error/warning/notice message in *.out file
-ini_set('include_path', dirname(__FILE__));
-include_once('common.inc');
 
 // SJIS string (BASE64 encoded)
 $sjis = base64_decode('k/qWe4zqg2WDTINYg2eCxYK3gUIwMTIzNIJUglWCVoJXgliBQg==');
@@ -102,13 +99,8 @@ $s = $euc_jp;
 $s = mb_convert_encoding($s, 'BAD');
 print("BAD: $s\n"); // BAD
 
-$s = $euc_jp;
-$s = mb_convert_encoding($s);
-print("MP: $s\n"); // Missing parameter
-
-
 ?>
---EXPECT--
+--EXPECTF--
 == BASIC TEST ==
 EUC-JP: 日本語テキストです。01234５６７８９。
 EUC-JP: 日本語テキストです。01234５６７８９。
@@ -129,7 +121,6 @@ JIS: GyRCRnxLXDhsJUYlLSU5JUgkRyQ5ISMbKEIwMTIzNBskQiM1IzYjNyM4IzkhIxsoQg==
 == INVALID PARAMETER ==
 INT: 1234
 EUC-JP: 
-ERR: Warning
+
+Warning: mb_convert_encoding(): Unknown encoding "BAD" in %s on line %d
 BAD: 
-ERR: Warning
-MP: 
